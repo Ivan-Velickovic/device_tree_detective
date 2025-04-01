@@ -22,7 +22,9 @@ pub fn build(b: *std.Build) void {
         .name = "dts_viewer",
         .root_module = exe_mod,
     });
-    exe.linkLibrary(cimgui_dep.artifact("cimgui"));
+    const cimgui_lib = cimgui_dep.artifact("cimgui");
+    exe.linkLibrary(cimgui_lib);
+    exe.root_module.addImport("gl", cimgui_lib.root_module.import_table.get("gl").?);
 
     b.installArtifact(exe);
 
