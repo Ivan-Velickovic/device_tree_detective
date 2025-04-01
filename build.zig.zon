@@ -1,0 +1,17 @@
+.{
+    .name = .dts_viewer,
+    .version = "0.0.0",
+    .fingerprint = 0xd3155c7ed943fc76, // Changing this has security and trust implications.
+    .minimum_zig_version = "0.14.0",
+    .dependencies = .{
+        .cimgui_zig = .{
+            .url = "git+https://github.com/tiawl/cimgui.zig#87ca6f06d24d9c0e4c1e3aa2df196619bc7b971f",
+            .hash = "cimgui_zig-1.0.0-2XubknU0SgCp3RDThCgE2jBNgIbyOmeyzWy3YL8tXEc8",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}
