@@ -8,6 +8,9 @@
             .url = "git+https://github.com/tiawl/cimgui.zig#87ca6f06d24d9c0e4c1e3aa2df196619bc7b971f",
             .hash = "cimgui_zig-1.0.0-2XubknU0SgCp3RDThCgE2jBNgIbyOmeyzWy3YL8tXEc8",
         },
+        .dtb = .{
+            .path = "./dtb.zig",
+        },
     },
     .paths = .{
         "build.zig",

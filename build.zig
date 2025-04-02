@@ -5,6 +5,9 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    const dtbzig_dep = b.dependency("dtb", .{});
+    const dtb_mod = dtbzig_dep.module("dtb");
+
     const cimgui_dep = b.dependency("cimgui_zig", .{
         .target = target,
         .optimize = optimize,
@@ -25,6 +28,7 @@ pub fn build(b: *std.Build) void {
     const cimgui_lib = cimgui_dep.artifact("cimgui");
     exe.linkLibrary(cimgui_lib);
     exe.root_module.addImport("gl", cimgui_lib.root_module.import_table.get("gl").?);
+    exe.root_module.addImport("dtb", dtb_mod);
 
     b.installArtifact(exe);
 
