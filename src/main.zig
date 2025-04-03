@@ -129,7 +129,13 @@ fn irqMapAdd(nodes: []*dtb.Node, map: *std.AutoHashMap(u64, *dtb.Node)) !void {
     for (nodes) |node| {
         if (node.prop(.Interrupts)) |irqs| {
             for (irqs) |irq| {
-                try map.put(irq[1], node);
+                if (node.interruptCells() == 1) {
+                    // HACK: for risc-v
+                    try map.put(irq[0], node);
+                } else {
+                    // HACK: for arm
+                    try map.put(irq[1], node);
+                }
             }
         }
         try irqMapAdd(node.children, map);
@@ -187,6 +193,10 @@ fn nodeTree(allocator: Allocator, nodes: []*dtb.Node, curr_highlighted_node: ?*d
             if (node.prop(.Interrupts)) |irqs| {
                 if (c.ImGui_TreeNodeEx("interrupts", c.ImGuiTreeNodeFlags_DefaultOpen)) {
                     for (irqs) |irq| {
+                        // TODO: fix
+                        if (node.interruptCells() != 3) {
+                            continue;
+                        }
                         {
                             const irq_str = fmt(allocator, "GIC visibile: 0x{x} ({d})", .{ irq[1], irq[1] });
                             defer allocator.free(irq_str);

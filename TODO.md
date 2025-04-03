@@ -15,3 +15,13 @@
 * [ ] opening files
 * [ ] heaps of styling to do
 * [ ] macOS support
+* [ ] In platform info show what RISC-V extensions a CPU supports in a nice way
+* [ ] list lists of strings as a drop-down in the 'selected node' view
+* [ ] dtb properites to parse
+    * [ ] interrupt-map
+    * [ ] interrupts-extended
+    * [ ] bus-range
+    * [ ] linux,pci-domain
+    * [ ] interrupt-map-mask
+    * [ ] bank-width
+    * [ ] riscv,event-to-mhpmcounters
