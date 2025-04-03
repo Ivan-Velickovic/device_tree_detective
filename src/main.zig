@@ -36,6 +36,7 @@ fn humanSize(allocator: Allocator, n: u64) []const u8 {
 }
 
 const LINUX_GITHUB = "https://github.com/torvalds/linux/tree/master";
+const UBOOT_GITHUB = "https://github.com/u-boot/u-boot/tree/master";
 
 const example_dtbs: []const [:0]const u8 = &.{
     "dtbs/imx8mm_evk.dtb",
@@ -214,6 +215,31 @@ fn nodeTree(allocator: Allocator, nodes: []*dtb.Node, curr_highlighted_node: ?*d
     return highlighted_node;
 }
 
+fn compatibleMap(allocator: Allocator, path: []const u8) !std.StringHashMap([]const u8) {
+    var map = std.StringHashMap([]const u8).init(allocator);
+    const file = try std.fs.cwd().openFile(path, .{});
+    const size = (try file.stat()).size;
+    const bytes = try file.reader().readAllAlloc(allocator, size);
+    // TODO: freeing this is more complicated since the hash map points to
+    // memory in the file.
+    // defer allocator.free(bytes);
+    var iterator = std.mem.splitScalar(u8, bytes, '\n');
+    while (iterator.next()) |line| {
+        if (line.len == 0) {
+            // TODO: not sure why I have to have this, the file does not have an extra newline or anything
+            continue;
+        }
+        var line_split = std.mem.splitScalar(u8, line, ':');
+        const filename = line_split.first();
+        const compatible = line_split.rest();
+        try map.put(compatible, filename);
+        std.debug.assert(compatible.len != 0);
+        std.debug.assert(filename.len != 0);
+    }
+
+    return map;
+}
+
 pub fn main() !void {
     std.debug.print("starting that shit\n", .{});
 
@@ -222,31 +248,10 @@ pub fn main() !void {
     var platform = try Platform.init(allocator, "dtbs/qemu_virt_aarch64.dtb");
     defer platform.deinit();
 
-    // Linux compatible list
-    var linux_compatible_map = std.StringHashMap([]const u8).init(allocator);
+    var linux_compatible_map = try compatibleMap(allocator, "linux_compatible_list.txt");
     defer linux_compatible_map.deinit();
-    {
-        const file = try std.fs.cwd().openFile("linux_compatible_list.txt", .{});
-        const size = (try file.stat()).size;
-        const bytes = try file.reader().readAllAlloc(allocator, size);
-        // TODO: freeing this is more complicated since the hash map points to
-        // memory in the file.
-        // defer allocator.free(bytes);
-        var iterator = std.mem.splitScalar(u8, bytes, '\n');
-        while (iterator.next()) |line| {
-            if (line.len == 0) {
-                // TODO: not sure why I have to have this, the file does not have an extra newline or anything
-                continue;
-            }
-            var line_split = std.mem.splitScalar(u8, line, ':');
-            const filename = line_split.first();
-            const compatible = line_split.rest();
-            try linux_compatible_map.put(compatible, filename);
-            std.debug.assert(compatible.len != 0);
-            std.debug.assert(filename.len != 0);
-        }
-    }
-    //
+    var uboot_compatible_map = try compatibleMap(allocator, "uboot_compatible_list.txt");
+    defer uboot_compatible_map.deinit();
 
     var procs: gl.ProcTable = undefined;
 
@@ -356,9 +361,13 @@ pub fn main() !void {
         if (highlighted_node) |node| {
             c.ImGui_Text(fmt(allocator, "{s}", .{ node.name }));
             if (node.prop(.Compatible)) |compatible| {
-                if (linux_compatible_map.get(compatible[0])) |linux_driver| {
-                    c.ImGui_Text("linux driver:");
-                    c.ImGui_TextLinkOpenURLEx(fmt(allocator, "{s}", .{ linux_driver }), fmt(allocator, "{s}/{s}", .{ LINUX_GITHUB, linux_driver }));
+                if (linux_compatible_map.get(compatible[0])) |driver| {
+                    c.ImGui_Text("Linux driver:");
+                    c.ImGui_TextLinkOpenURLEx(fmt(allocator, "{s}##linux", .{ driver }), fmt(allocator, "{s}/{s}", .{ LINUX_GITHUB, driver }));
+                }
+                if (uboot_compatible_map.get(compatible[0])) |driver| {
+                    c.ImGui_Text("U-Boot driver:");
+                    c.ImGui_TextLinkOpenURLEx(fmt(allocator, "{s}##uboot", .{ driver }), fmt(allocator, "{s}/{s}", .{ UBOOT_GITHUB, driver }));
                 }
             }
             for (node.props) |prop| {
