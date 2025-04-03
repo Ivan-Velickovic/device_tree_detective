@@ -153,19 +153,23 @@ fn irqList(allocator: Allocator, root: *dtb.Node) !std.AutoHashMap(u64, *dtb.Nod
     return map;
 }
 
-fn nodeTree(allocator: Allocator, nodes: []*dtb.Node, curr_highlighted_node: ?*dtb.Node) !?*dtb.Node {
+fn nodeTree(allocator: Allocator, nodes: []*dtb.Node, curr_highlighted_node: ?*dtb.Node, expand_all: bool) !?*dtb.Node {
     var highlighted_node: ?*dtb.Node = curr_highlighted_node;
     for (nodes) |node| {
         const c_name = try allocator.allocSentinel(u8, node.name.len, 0);
         defer allocator.free(c_name);
         @memcpy(c_name, node.name);
-        if (c.ImGui_TreeNodeEx(c_name.ptr, c.ImGuiTreeNodeFlags_AllowOverlap | c.ImGuiTreeNodeFlags_SpanFullWidth)) {
+        var flags = c.ImGuiTreeNodeFlags_AllowOverlap | c.ImGuiTreeNodeFlags_SpanFullWidth;
+        if (expand_all) {
+            flags |= c.ImGuiTreeNodeFlags_DefaultOpen;
+        }
+        if (c.ImGui_TreeNodeEx(c_name.ptr, flags)) {
             // TODO: maybe want better hover flags
             if (c.ImGui_IsItemToggledOpen()) {
                 highlighted_node = node;
             }
             if (node.prop(.Compatible)) |compatibles| {
-                if (c.ImGui_TreeNodeEx("compatible", c.ImGuiTreeNodeFlags_DefaultOpen)) {
+                if (c.ImGui_TreeNodeEx("compatible", c.ImGuiTreeNodeFlags_DefaultOpen | c.ImGuiTreeNodeFlags_Leaf)) {
                     for (compatibles) |compatible| {
                         const compatible_str = fmt(allocator, "{s}", .{ compatible });
                         defer allocator.free(compatible_str);
@@ -177,7 +181,7 @@ fn nodeTree(allocator: Allocator, nodes: []*dtb.Node, curr_highlighted_node: ?*d
                 }
             }
             if (node.prop(.Reg)) |regions| {
-                if (c.ImGui_TreeNodeEx("memory", c.ImGuiTreeNodeFlags_DefaultOpen)) {
+                if (c.ImGui_TreeNodeEx("memory", c.ImGuiTreeNodeFlags_DefaultOpen | c.ImGuiTreeNodeFlags_Leaf)) {
                     for (regions) |region| {
                         const human_size = humanSize(allocator, @intCast(region[1]));
                         defer allocator.free(human_size);
@@ -191,7 +195,7 @@ fn nodeTree(allocator: Allocator, nodes: []*dtb.Node, curr_highlighted_node: ?*d
                 }
             }
             if (node.prop(.Interrupts)) |irqs| {
-                if (c.ImGui_TreeNodeEx("interrupts", c.ImGuiTreeNodeFlags_DefaultOpen)) {
+                if (c.ImGui_TreeNodeEx("interrupts", c.ImGuiTreeNodeFlags_DefaultOpen | c.ImGuiTreeNodeFlags_Leaf)) {
                     for (irqs) |irq| {
                         // TODO: fix
                         if (node.interruptCells() != 3) {
@@ -216,7 +220,7 @@ fn nodeTree(allocator: Allocator, nodes: []*dtb.Node, curr_highlighted_node: ?*d
                 }
             }
             if (node.children.len != 0) {
-                highlighted_node = try nodeTree(allocator, node.children, highlighted_node);
+                highlighted_node = try nodeTree(allocator, node.children, highlighted_node, expand_all);
             }
             c.ImGui_TreePop();
         }
@@ -251,8 +255,6 @@ fn compatibleMap(allocator: Allocator, path: []const u8) !std.StringHashMap([]co
 }
 
 pub fn main() !void {
-    std.debug.print("starting that shit\n", .{});
-
     const allocator = std.heap.c_allocator;
 
     var platform = try Platform.init(allocator, "dtbs/qemu_virt_aarch64.dtb");
@@ -309,6 +311,7 @@ pub fn main() !void {
     // TODO: move this into platform struct
     var highlighted_node: ?*dtb.Node = null;
     var dtb_to_load: ?[]const u8 = null;
+    var nodes_expand_all = false;
     while (c.glfwWindowShouldClose(window) != c.GLFW_TRUE) {
         c.glfwPollEvents();
 
@@ -358,16 +361,27 @@ pub fn main() !void {
             c.ImGui_EndPopup();
         }
 
+        c.ImGui_SetNextWindowPos(c.ImVec2 { .x = 0, .y = 20 }, 0);
         _ = c.ImGui_Begin("DTB", null, c.ImGuiWindowFlags_NoCollapse);
+        c.ImGui_SetWindowSize(c.ImVec2 { .x = 1920 / 2, .y = 1080 - 20 }, 0);
 
-        // const nodes_expand_all = c.ImGui_Button("Expand All");
-        // const nodes_collapse_all = c.ImGui_Button("Collapse All");
+        // TODO: this logic is definetely wrong
+        const expand_all = c.ImGui_Button("Expand All");
+        c.ImGui_SameLine();
+        const collapse_all = c.ImGui_Button("Collapse All");
+        if (!nodes_expand_all) {
+            nodes_expand_all = expand_all;
+        } else if (collapse_all) {
+            nodes_expand_all = false;
+        }
 
-        highlighted_node = try nodeTree(allocator, platform.root.children, highlighted_node);
+        highlighted_node = try nodeTree(allocator, platform.root.children, highlighted_node, nodes_expand_all);
         c.ImGui_End();
 
         // === Selected Node Window ===
+        c.ImGui_SetNextWindowPos(c.ImVec2 { .x = 1920 / 2, .y = 20 }, 0);
         _ = c.ImGui_Begin("Selected Node", null, 0);
+        c.ImGui_SetWindowSize(c.ImVec2 { .x = 1920 / 2, .y = 1080 / 2 }, 0);
         if (highlighted_node) |node| {
             c.ImGui_Text(fmt(allocator, "{s}", .{ node.name }));
             if (node.prop(.Compatible)) |compatible| {
@@ -387,34 +401,51 @@ pub fn main() !void {
         c.ImGui_End();
         // ===========================
 
-        // === Platform Info Window ===
-        _ = c.ImGui_Begin("Platform Info", null, 0);
-        c.ImGui_Text(fmt(allocator, "File: '{s}'", .{ platform.path }));
-        const model = platform.model orelse "n/a";
-        c.ImGui_Text(fmt(allocator, "Model: {s}", .{ model }));
-        // TODO: don't .?
-        const main_memory_text = fmt(allocator, "Main Memory ({s})", .{ humanSize(allocator, platform.main_memory.?.size )});
-        defer allocator.free(main_memory_text);
-        if (c.ImGui_TreeNodeEx(main_memory_text, c.ImGuiTreeNodeFlags_DefaultOpen)) {
-            for (platform.main_memory.?.regions.items) |region| {
-                const human_size = humanSize(allocator, region.size);
-                defer allocator.free(human_size);
-                const addr = fmt(allocator, "[0x{x}..0x{x}] ({s})", .{ region.addr, region.addr + region.size, human_size });
-                defer allocator.free(addr);
-                if (c.ImGui_TreeNodeEx(addr, c.ImGuiTreeNodeFlags_Leaf)) {
+        // === Details Window ===
+        c.ImGui_SetNextWindowPos(c.ImVec2 { .x = 1920 / 2, .y = 1080 / 2 }, 0);
+        _ = c.ImGui_Begin("Details", null, 0);
+        c.ImGui_SetWindowSize(c.ImVec2 { .x = 1920 / 2, .y = 1080 / 2 }, 0);
+        if (c.ImGui_BeginTabBar("info", c.ImGuiTabBarFlags_None)) {
+            if (c.ImGui_BeginTabItem("Platform", null, c.ImGuiTabItemFlags_None)) {
+                c.ImGui_Text(fmt(allocator, "File: '{s}'", .{ platform.path }));
+                const model = platform.model orelse "n/a";
+                c.ImGui_Text(fmt(allocator, "Model: {s}", .{ model }));
+                // TODO: don't .?
+                const main_memory_text = fmt(allocator, "Main Memory ({s})", .{ humanSize(allocator, platform.main_memory.?.size )});
+                defer allocator.free(main_memory_text);
+                if (c.ImGui_TreeNodeEx(main_memory_text, c.ImGuiTreeNodeFlags_DefaultOpen)) {
+                    for (platform.main_memory.?.regions.items) |region| {
+                        const human_size = humanSize(allocator, region.size);
+                        defer allocator.free(human_size);
+                        const addr = fmt(allocator, "[0x{x}..0x{x}] ({s})", .{ region.addr, region.addr + region.size, human_size });
+                        defer allocator.free(addr);
+                        if (c.ImGui_TreeNodeEx(addr, c.ImGuiTreeNodeFlags_Leaf)) {
+                            c.ImGui_TreePop();
+                        }
+                    }
                     c.ImGui_TreePop();
                 }
+                if (platform.root.propAt(&.{ "cpus", "cpu@0" }, .RiscvIsaExtensions)) |extensions| {
+                    if (c.ImGui_TreeNodeEx("Extensions", c.ImGuiTreeNodeFlags_DefaultOpen)) {
+                        for (extensions) |extension| {
+                            const c_extension = fmt(allocator, "{s}", .{ extension });
+                            if (c.ImGui_TreeNodeEx(c_extension, c.ImGuiTreeNodeFlags_Leaf)) {
+                                c.ImGui_TreePop();
+                            }
+                        }
+                        c.ImGui_TreePop();
+                    }
+                }
+                c.ImGui_EndTabItem();
             }
-            c.ImGui_TreePop();
-        }
-        c.ImGui_End();
-        // ===========================
-
-        // === Platform Info Window ===
-        _ = c.ImGui_Begin("Interrupt Info", null, 0);
-        var irq_list_iterator = platform.irqs.iterator();
-        while (irq_list_iterator.next()) |entry| {
-            c.ImGui_Text(fmt(allocator, "{d} (0x{x}), {s}", .{ entry.key_ptr.*, entry.key_ptr.*, entry.value_ptr.*.name }));
+            if (c.ImGui_BeginTabItem("Interrupts", null, c.ImGuiTabItemFlags_None)) {
+                var irq_list_iterator = platform.irqs.iterator();
+                while (irq_list_iterator.next()) |entry| {
+                    c.ImGui_Text(fmt(allocator, "{d} (0x{x}), {s}", .{ entry.key_ptr.*, entry.key_ptr.*, entry.value_ptr.*.name }));
+                }
+                c.ImGui_EndTabItem();
+            }
+            c.ImGui_EndTabBar();
         }
         c.ImGui_End();
         // ===========================

@@ -27,4 +27,4 @@
     * [ ] riscv,event-to-mhpmcounters
     * [ ] migrate, cpu_on, cpu_off, cpu_suspend
 * [ ] display status = disabled or status = okay nicely
-
+* [ ] in selected node, show full path to node rather than just the name
