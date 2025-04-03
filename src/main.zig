@@ -37,10 +37,25 @@ fn humanSize(allocator: Allocator, n: u64) []const u8 {
 
 const LINUX_GITHUB = "https://github.com/torvalds/linux/tree/master";
 
+const example_dtbs: []const [:0]const u8 = &.{
+    "dtbs/imx8mm_evk.dtb",
+    "dtbs/imx8mp_evk.dtb",
+    "dtbs/imx8mq_evk.dtb",
+    "dtbs/maaxboard.dtb",
+    "dtbs/odroidc2.dtb",
+    "dtbs/odroidc4.dtb",
+    "dtbs/qemu_virt_aarch64.dtb",
+    "dtbs/qemu_virt_riscv64.dtb",
+    "dtbs/star64.dtb",
+};
+
 const Platform = struct {
-    filename: []const u8,
+    allocator: Allocator,
+    path: []const u8,
+    root: *dtb.Node,
     model: ?[]const u8,
     main_memory: ?MainMemory,
+    irqs: std.AutoHashMap(u64, *dtb.Node),
     // cpus: ?ArrayList(Cpu),
 
     // pub const Cpu = struct {
@@ -62,7 +77,14 @@ const Platform = struct {
         size: u64,
     };
 
-    pub fn init(allocator: Allocator, root: *dtb.Node, filename: []const u8) Platform {
+    pub fn init(allocator: Allocator, path: []const u8) !Platform {
+        const dtb_file = try std.fs.cwd().openFile(path, .{});
+        const dtb_size = (try dtb_file.stat()).size;
+        const blob_bytes = try dtb_file.reader().readAllAlloc(allocator, dtb_size);
+        // TODO: do we need to free this in deinit or is it safe to do here?
+        // defer allocator.free(blob_bytes);
+        const root = try dtb.parse(allocator, blob_bytes);
+
         var main_memory: ?MainMemory = null;
         const memory_node = dtb.memory(root);
         if (memory_node != null and memory_node.?.prop(.Reg) != null) {
@@ -84,18 +106,45 @@ const Platform = struct {
         }
 
         return .{
-            .filename = filename,
+            .allocator = allocator,
+            .path = path,
+            .root = root,
             .model = root.prop(.Model),
             .main_memory = main_memory,
+            .irqs = try irqList(allocator, root),
         };
     }
 
-    pub fn deinit(platform: Platform) void {
+    pub fn deinit(platform: *Platform) void {
         if (platform.main_memory) |m| {
             m.regions.deinit();
         }
+        platform.irqs.deinit();
+        platform.root.deinit(platform.allocator);
     }
 };
+
+fn irqMapAdd(nodes: []*dtb.Node, map: *std.AutoHashMap(u64, *dtb.Node)) !void {
+    for (nodes) |node| {
+        if (node.prop(.Interrupts)) |irqs| {
+            for (irqs) |irq| {
+                try map.put(irq[1], node);
+            }
+        }
+        try irqMapAdd(node.children, map);
+    }
+}
+
+/// Go through all the nodes, and make a hash map from IRQ number to
+/// DTB node.
+/// Owner own hash map memory, DTB node data must live longer than
+/// the hash map.
+fn irqList(allocator: Allocator, root: *dtb.Node) !std.AutoHashMap(u64, *dtb.Node) {
+    var map = std.AutoHashMap(u64, *dtb.Node).init(allocator);
+    try irqMapAdd(root.children, &map);
+
+    return map;
+}
 
 fn nodeTree(allocator: Allocator, nodes: []*dtb.Node, curr_highlighted_node: ?*dtb.Node) !?*dtb.Node {
     var highlighted_node: ?*dtb.Node = curr_highlighted_node;
@@ -170,24 +219,8 @@ pub fn main() !void {
 
     const allocator = std.heap.c_allocator;
 
-    const dtb_filename = "qemu_virt_aarch64.dtb";
-
-    // DTB init
-    const dtb_file = try std.fs.cwd().openFile(dtb_filename, .{});
-    const dtb_size = (try dtb_file.stat()).size;
-    const blob_bytes = try dtb_file.reader().readAllAlloc(allocator, dtb_size);
-    defer allocator.free(blob_bytes);
-
-    const parsed_dtb = try dtb.parse(allocator, blob_bytes);
-    defer parsed_dtb.deinit(allocator);
-
-    for (parsed_dtb.children) |child| {
-        std.debug.print("child '{any}'\n", .{ child });
-    }
-
-    const platform = Platform.init(allocator, parsed_dtb, dtb_filename);
+    var platform = try Platform.init(allocator, "dtbs/qemu_virt_aarch64.dtb");
     defer platform.deinit();
-    //
 
     // Linux compatible list
     var linux_compatible_map = std.StringHashMap([]const u8).init(allocator);
@@ -258,7 +291,9 @@ pub fn main() !void {
     _ = c.cImGui_ImplOpenGL3_InitEx(GLSL_VERSION);
     defer c.cImGui_ImplOpenGL3_Shutdown();
 
+    // TODO: move this into platform struct
     var highlighted_node: ?*dtb.Node = null;
+    var dtb_to_load: ?[]const u8 = null;
     while (c.glfwWindowShouldClose(window) != c.GLFW_TRUE) {
         c.glfwPollEvents();
 
@@ -271,6 +306,14 @@ pub fn main() !void {
         var open_about = false;
         if (c.ImGui_BeginMainMenuBar()) {
             if (c.ImGui_BeginMenu("File")) {
+                if (c.ImGui_BeginMenu("Examples")) {
+                    for (example_dtbs) |example| {
+                        if (c.ImGui_MenuItem(example)) {
+                            dtb_to_load = example;
+                        }
+                    }
+                    c.ImGui_EndMenu();
+                }
                 c.ImGui_EndMenu();
             }
             if (c.ImGui_BeginMenu("Help")) {
@@ -280,6 +323,15 @@ pub fn main() !void {
                 c.ImGui_EndMenu();
             }
             c.ImGui_EndMainMenuBar();
+        }
+
+        if (dtb_to_load) |d| {
+            if (!std.mem.eql(u8, platform.path, d)) {
+                // TODO: pretty sus on this
+                platform.deinit();
+                platform = try Platform.init(allocator, d);
+                highlighted_node = null;
+            }
         }
 
         if (open_about) {
@@ -296,7 +348,7 @@ pub fn main() !void {
         // const nodes_expand_all = c.ImGui_Button("Expand All");
         // const nodes_collapse_all = c.ImGui_Button("Collapse All");
 
-        highlighted_node = try nodeTree(allocator, parsed_dtb.children, highlighted_node);
+        highlighted_node = try nodeTree(allocator, platform.root.children, highlighted_node);
         c.ImGui_End();
 
         // === Selected Node Window ===
@@ -318,9 +370,9 @@ pub fn main() !void {
 
         // === Platform Info Window ===
         _ = c.ImGui_Begin("Platform Info", null, 0);
-        c.ImGui_Text(fmt(allocator, "reading from '{s}'", .{ platform.filename }));
+        c.ImGui_Text(fmt(allocator, "File: '{s}'", .{ platform.path }));
         const model = platform.model orelse "n/a";
-        c.ImGui_Text(fmt(allocator, "model: {s}", .{ model }));
+        c.ImGui_Text(fmt(allocator, "Model: {s}", .{ model }));
         // TODO: don't .?
         const main_memory_text = fmt(allocator, "Main Memory ({s})", .{ humanSize(allocator, platform.main_memory.?.size )});
         defer allocator.free(main_memory_text);
@@ -335,6 +387,15 @@ pub fn main() !void {
                 }
             }
             c.ImGui_TreePop();
+        }
+        c.ImGui_End();
+        // ===========================
+
+        // === Platform Info Window ===
+        _ = c.ImGui_Begin("Interrupt Info", null, 0);
+        var irq_list_iterator = platform.irqs.iterator();
+        while (irq_list_iterator.next()) |entry| {
+            c.ImGui_Text(fmt(allocator, "{d} (0x{x}), {s}", .{ entry.key_ptr.*, entry.key_ptr.*, entry.value_ptr.*.name }));
         }
         c.ImGui_End();
         // ===========================
