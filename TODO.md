@@ -26,3 +26,5 @@
     * [ ] bank-width
     * [ ] riscv,event-to-mhpmcounters
     * [ ] migrate, cpu_on, cpu_off, cpu_suspend
+* [ ] display status = disabled or status = okay nicely
+
