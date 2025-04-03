@@ -22,7 +22,7 @@ pub fn build(b: *std.Build) void {
     });
 
     const exe = b.addExecutable(.{
-        .name = "dts_viewer",
+        .name = "dtb_viewer",
         .root_module = exe_mod,
     });
     const cimgui_lib = cimgui_dep.artifact("cimgui");

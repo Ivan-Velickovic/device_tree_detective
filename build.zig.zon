@@ -1,5 +1,5 @@
 .{
-    .name = .dts_viewer,
+    .name = .dtb_viewer,
     .version = "0.0.0",
     .fingerprint = 0xd3155c7ed943fc76, // Changing this has security and trust implications.
     .minimum_zig_version = "0.14.0",
