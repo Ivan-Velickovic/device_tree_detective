@@ -25,3 +25,4 @@
     * [ ] interrupt-map-mask
     * [ ] bank-width
     * [ ] riscv,event-to-mhpmcounters
+    * [ ] migrate, cpu_on, cpu_off, cpu_suspend
