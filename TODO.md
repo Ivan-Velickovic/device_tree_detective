@@ -28,3 +28,5 @@
     * [ ] migrate, cpu_on, cpu_off, cpu_suspend
 * [ ] display status = disabled or status = okay nicely
 * [ ] in selected node, show full path to node rather than just the name
+* [ ] collpase seems to have a bug where collapse all only collapses nodes that have
+      not been explictily opened by the user

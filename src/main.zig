@@ -38,25 +38,13 @@ fn humanSize(allocator: Allocator, n: u64) []const u8 {
 const LINUX_GITHUB = "https://github.com/torvalds/linux/tree/master";
 const UBOOT_GITHUB = "https://github.com/u-boot/u-boot/tree/master";
 
-const example_dtbs: []const [:0]const u8 = &.{
-    "dtbs/imx8mm_evk.dtb",
-    "dtbs/imx8mp_evk.dtb",
-    "dtbs/imx8mq_evk.dtb",
-    "dtbs/maaxboard.dtb",
-    "dtbs/odroidc2.dtb",
-    "dtbs/odroidc4.dtb",
-    "dtbs/qemu_virt_aarch64.dtb",
-    "dtbs/qemu_virt_riscv64.dtb",
-    "dtbs/star64.dtb",
-};
-
 const Platform = struct {
     allocator: Allocator,
     path: []const u8,
     root: *dtb.Node,
     model: ?[]const u8,
     main_memory: ?MainMemory,
-    irqs: std.AutoHashMap(u64, *dtb.Node),
+    irqs: std.ArrayList(Irq),
     // cpus: ?ArrayList(Cpu),
 
     // pub const Cpu = struct {
@@ -125,20 +113,20 @@ const Platform = struct {
     }
 };
 
-fn irqMapAdd(nodes: []*dtb.Node, map: *std.AutoHashMap(u64, *dtb.Node)) !void {
+fn irqListAdd(nodes: []*dtb.Node, irqs: *std.ArrayList(Irq)) !void {
     for (nodes) |node| {
-        if (node.prop(.Interrupts)) |irqs| {
-            for (irqs) |irq| {
+        if (node.prop(.Interrupts)) |node_irqs| {
+            for (node_irqs) |irq| {
                 if (node.interruptCells() == 1) {
                     // HACK: for risc-v
-                    try map.put(irq[0], node);
+                    try irqs.append(.{ .number = irq[0], .node = node });
                 } else {
                     // HACK: for arm
-                    try map.put(irq[1], node);
+                    try irqs.append(.{ .number = irq[1], .node = node });
                 }
             }
         }
-        try irqMapAdd(node.children, map);
+        try irqListAdd(node.children, irqs);
     }
 }
 
@@ -146,11 +134,23 @@ fn irqMapAdd(nodes: []*dtb.Node, map: *std.AutoHashMap(u64, *dtb.Node)) !void {
 /// DTB node.
 /// Owner own hash map memory, DTB node data must live longer than
 /// the hash map.
-fn irqList(allocator: Allocator, root: *dtb.Node) !std.AutoHashMap(u64, *dtb.Node) {
-    var map = std.AutoHashMap(u64, *dtb.Node).init(allocator);
-    try irqMapAdd(root.children, &map);
+// TODO: maybe this should be an array of lists instead
+const Irq = struct {
+    number: u64,
+    node: *dtb.Node,
+};
 
-    return map;
+fn irqAsc(_: void, a: Irq, b: Irq) bool {
+    return a.number < b.number;
+}
+
+fn irqList(allocator: Allocator, root: *dtb.Node) !std.ArrayList(Irq) {
+    var irqs = std.ArrayList(Irq).init(allocator);
+    try irqListAdd(root.children, &irqs);
+
+    std.mem.sort(Irq, irqs.items, {}, irqAsc);
+
+    return irqs;
 }
 
 fn nodeTree(allocator: Allocator, nodes: []*dtb.Node, curr_highlighted_node: ?*dtb.Node, expand_all: bool) !?*dtb.Node {
@@ -196,6 +196,7 @@ fn nodeTree(allocator: Allocator, nodes: []*dtb.Node, curr_highlighted_node: ?*d
             }
             if (node.prop(.Interrupts)) |irqs| {
                 if (c.ImGui_TreeNodeEx("interrupts", c.ImGuiTreeNodeFlags_DefaultOpen | c.ImGuiTreeNodeFlags_Leaf)) {
+                    c.ImGui_InputText("input text", str0, IM_ARRAYSIZE(str0));
                     for (irqs) |irq| {
                         // TODO: fix
                         if (node.interruptCells() != 3) {
@@ -254,16 +255,51 @@ fn compatibleMap(allocator: Allocator, path: []const u8) !std.StringHashMap([]co
     return map;
 }
 
+fn exampleDtbs(allocator: Allocator, dir_path: []const u8) !std.ArrayList([:0]const u8) {
+    var example_dtbs = std.ArrayList([:0]const u8).init(allocator);
+    var dir = try std.fs.cwd().openDir(dir_path, .{ .iterate = true });
+    defer dir.close();
+
+    var iter = dir.iterate();
+    while (try iter.next()) |entry| {
+        if (entry.kind != .file) {
+            continue;
+        }
+
+        // TODO: we can do this instead by reading the DTB magic
+        if (std.mem.eql(u8, ".dtb", entry.name[entry.name.len - 4..entry.name.len])) {
+            try example_dtbs.append(fmt(allocator, "{s}/{s}", .{ dir_path, entry.name }));
+        }
+    }
+
+    return example_dtbs;
+}
+
 pub fn main() !void {
     const allocator = std.heap.c_allocator;
 
-    var platform = try Platform.init(allocator, "dtbs/qemu_virt_aarch64.dtb");
+    var platform = try Platform.init(allocator, "dtbs/sel4/qemu_virt_aarch64.dtb");
     defer platform.deinit();
 
     var linux_compatible_map = try compatibleMap(allocator, "linux_compatible_list.txt");
     defer linux_compatible_map.deinit();
     var uboot_compatible_map = try compatibleMap(allocator, "uboot_compatible_list.txt");
     defer uboot_compatible_map.deinit();
+
+    const sel4_example_dtbs = try exampleDtbs(allocator, "dtbs/sel4");
+    defer {
+        for (sel4_example_dtbs.items) |d| {
+            allocator.free(d);
+        }
+        sel4_example_dtbs.deinit();
+    }
+    const linux_example_dtbs = try exampleDtbs(allocator, "dtbs/linux");
+    defer {
+        for (linux_example_dtbs.items) |d| {
+            allocator.free(d);
+        }
+        linux_example_dtbs.deinit();
+    }
 
     var procs: gl.ProcTable = undefined;
 
@@ -319,16 +355,25 @@ pub fn main() !void {
         c.cImGui_ImplGlfw_NewFrame();
         c.ImGui_NewFrame();
 
-        c.ImGui_ShowDemoWindow(null);
-
         var open_about = false;
         if (c.ImGui_BeginMainMenuBar()) {
             if (c.ImGui_BeginMenu("File")) {
                 if (c.ImGui_BeginMenu("Examples")) {
-                    for (example_dtbs) |example| {
-                        if (c.ImGui_MenuItem(example)) {
-                            dtb_to_load = example;
+                    if (c.ImGui_BeginMenu("sel4")) {
+                        for (sel4_example_dtbs.items) |example| {
+                            if (c.ImGui_MenuItem(example)) {
+                                dtb_to_load = example;
+                            }
                         }
+                        c.ImGui_EndMenu();
+                    }
+                    if (c.ImGui_BeginMenu("linux")) {
+                        for (linux_example_dtbs.items) |example| {
+                            if (c.ImGui_MenuItem(example)) {
+                                dtb_to_load = example;
+                            }
+                        }
+                        c.ImGui_EndMenu();
                     }
                     c.ImGui_EndMenu();
                 }
@@ -349,6 +394,7 @@ pub fn main() !void {
                 platform.deinit();
                 platform = try Platform.init(allocator, d);
                 highlighted_node = null;
+                nodes_expand_all = false;
             }
         }
 
@@ -362,7 +408,7 @@ pub fn main() !void {
         }
 
         c.ImGui_SetNextWindowPos(c.ImVec2 { .x = 0, .y = 20 }, 0);
-        _ = c.ImGui_Begin("DTB", null, c.ImGuiWindowFlags_NoCollapse);
+        _ = c.ImGui_Begin("DTB", null, c.ImGuiWindowFlags_NoCollapse | c.ImGuiWindowFlags_NoResize);
         c.ImGui_SetWindowSize(c.ImVec2 { .x = 1920 / 2, .y = 1080 - 20 }, 0);
 
         // TODO: this logic is definetely wrong
@@ -380,8 +426,8 @@ pub fn main() !void {
 
         // === Selected Node Window ===
         c.ImGui_SetNextWindowPos(c.ImVec2 { .x = 1920 / 2, .y = 20 }, 0);
-        _ = c.ImGui_Begin("Selected Node", null, 0);
-        c.ImGui_SetWindowSize(c.ImVec2 { .x = 1920 / 2, .y = 1080 / 2 }, 0);
+        _ = c.ImGui_Begin("Selected Node", null, c.ImGuiWindowFlags_NoCollapse | c.ImGuiWindowFlags_NoResize);
+        c.ImGui_SetWindowSize(c.ImVec2 { .x = 1920 / 2, .y = (1080 / 2) - 20 }, 0);
         if (highlighted_node) |node| {
             c.ImGui_Text(fmt(allocator, "{s}", .{ node.name }));
             if (node.prop(.Compatible)) |compatible| {
@@ -403,7 +449,7 @@ pub fn main() !void {
 
         // === Details Window ===
         c.ImGui_SetNextWindowPos(c.ImVec2 { .x = 1920 / 2, .y = 1080 / 2 }, 0);
-        _ = c.ImGui_Begin("Details", null, 0);
+        _ = c.ImGui_Begin("Details", null, c.ImGuiWindowFlags_NoCollapse | c.ImGuiWindowFlags_NoResize);
         c.ImGui_SetWindowSize(c.ImVec2 { .x = 1920 / 2, .y = 1080 / 2 }, 0);
         if (c.ImGui_BeginTabBar("info", c.ImGuiTabBarFlags_None)) {
             if (c.ImGui_BeginTabItem("Platform", null, c.ImGuiTabItemFlags_None)) {
@@ -426,7 +472,7 @@ pub fn main() !void {
                     c.ImGui_TreePop();
                 }
                 if (platform.root.propAt(&.{ "cpus", "cpu@0" }, .RiscvIsaExtensions)) |extensions| {
-                    if (c.ImGui_TreeNodeEx("Extensions", c.ImGuiTreeNodeFlags_DefaultOpen)) {
+                    if (c.ImGui_TreeNodeEx("RISC-V ISA Extensions", c.ImGuiTreeNodeFlags_DefaultOpen)) {
                         for (extensions) |extension| {
                             const c_extension = fmt(allocator, "{s}", .{ extension });
                             if (c.ImGui_TreeNodeEx(c_extension, c.ImGuiTreeNodeFlags_Leaf)) {
@@ -439,9 +485,8 @@ pub fn main() !void {
                 c.ImGui_EndTabItem();
             }
             if (c.ImGui_BeginTabItem("Interrupts", null, c.ImGuiTabItemFlags_None)) {
-                var irq_list_iterator = platform.irqs.iterator();
-                while (irq_list_iterator.next()) |entry| {
-                    c.ImGui_Text(fmt(allocator, "{d} (0x{x}), {s}", .{ entry.key_ptr.*, entry.key_ptr.*, entry.value_ptr.*.name }));
+                for (platform.irqs.items) |irq| {
+                    c.ImGui_Text(fmt(allocator, "{d} (0x{x}), {s}", .{ irq.number, irq.number, irq.node.name }));
                 }
                 c.ImGui_EndTabItem();
             }
