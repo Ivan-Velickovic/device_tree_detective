@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const dtb = @import("dtb.zig");
 const Allocator = std.mem.Allocator;
 const ArrayList = std.ArrayList;
@@ -424,9 +425,17 @@ pub fn main() !void {
     }
     defer c.glfwTerminate();
 
-    const GLSL_VERSION = "#version 130";
+    const GLSL_VERSION = comptime switch (builtin.os.tag) {
+        .macos => "#version 150",
+        .linux => "#version 130",
+        else => @compileError("unknown GLSL version for OS"),
+    };
     c.glfwWindowHint(c.GLFW_CONTEXT_VERSION_MAJOR, 3);
-    c.glfwWindowHint(c.GLFW_CONTEXT_VERSION_MINOR, 0);
+    c.glfwWindowHint(c.GLFW_CONTEXT_VERSION_MINOR, 3);
+
+    if (builtin.os.tag == .macos) {
+        c.glfwWindowHint(c.GLFW_OPENGL_FORWARD_COMPAT, c.GL_TRUE);
+    }
 
     const window = c.glfwCreateWindow(1920, 1080, "DTB viewer", null, null);
     if (window == null) {
