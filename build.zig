@@ -57,8 +57,6 @@ pub fn build(b: *std.Build) void {
         "-ffunction-sections",
         "-fdata-sections",
         "-DIMGUI_DISABLE_OBSOLETE_FUNCTIONS=1",
-        //"-DIMGUI_IMPL_API=\"extern \"C\" \"",
-        //"-DIMGUI_IMPL_API=\"extern \\\"C\\\" \"",
         "-DIMGUI_IMPL_API=extern \"C\" ",
         "-DIMGUI_IMPL_OPENGL_LOADER_GL3W",
         "-Dcimgui_EXPORTS"
