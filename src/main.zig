@@ -4,6 +4,7 @@ const gl = @import("gl");
 const Allocator = std.mem.Allocator;
 const ArrayList = std.ArrayList;
 
+// TODO: get this from build.zig.zon instead
 const VERSION = "0.1.0";
 const ABOUT = std.fmt.comptimePrint("DTB viewer v{s}", .{ VERSION });
 
@@ -18,6 +19,12 @@ const c = @cImport({
     // @cDefine("STBI_NO_STDIO", "");
     @cInclude("stb_image.h");
 });
+
+fn dropCallback(_: ?*c.GLFWwindow, count: c_int, paths: [*c][*c]const u8) callconv(.C) void {
+    for (0..@intCast(count)) |i| {
+        std.debug.print("{s}\n", .{ paths[i] });
+    }
+}
 
 /// 16MiB. Should be plenty given the biggest DTS in Linux at the
 /// time of writing is less than 200KiB.
@@ -434,6 +441,8 @@ pub fn main() !void {
     icons[0].pixels = c.stbi_load("test-logo.png", &icons[0].width, &icons[0].height, 0, 4);
     c.glfwSetWindowIcon(window, 1, &icons);
     c.stbi_image_free(icons[0].pixels);
+
+    _ = c.glfwSetDropCallback(window, dropCallback);
 
     if (!procs.init(c.glfwGetProcAddress)) return error.InitFailed;
 
