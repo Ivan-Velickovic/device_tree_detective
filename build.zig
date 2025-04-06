@@ -27,6 +27,7 @@ pub fn build(b: *std.Build) void {
     });
     const cimgui_lib = cimgui_dep.artifact("cimgui");
     exe.linkLibrary(cimgui_lib);
+    exe.addIncludePath(b.path("include"));
     exe.root_module.addImport("gl", cimgui_lib.root_module.import_table.get("gl").?);
     exe.root_module.addImport("dtb", dtb_mod);
 

@@ -4,13 +4,24 @@ const gl = @import("gl");
 const Allocator = std.mem.Allocator;
 const ArrayList = std.ArrayList;
 
+const VERSION = "0.1.0";
+const ABOUT = std.fmt.comptimePrint("DTB viewer v{s}", .{ VERSION });
+
 const c = @cImport({
     @cDefine("GLFW_INCLUDE_NONE", "1");
     @cInclude("GLFW/glfw3.h");
     @cInclude("dcimgui.h");
     @cInclude("backends/dcimgui_impl_glfw.h");
     @cInclude("backends/dcimgui_impl_opengl3.h");
+    @cDefine("STBI_ONLY_PNG", "");
+    @cDefine("STB_IMAGE_IMPLEMENTATION", "");
+    // @cDefine("STBI_NO_STDIO", "");
+    @cInclude("stb_image.h");
 });
+
+/// 16MiB. Should be plenty given the biggest DTS in Linux at the
+/// time of writing is less than 200KiB.
+const DTB_DECOMPILE_MAX_OUTPUT = 1024 * 1024 * 16;
 
 fn errorCallback(errn: c_int, str: [*c]const u8) callconv(.C) void {
     std.log.err("GLFW Error '{}'': {s}", .{ errn, str });
@@ -33,6 +44,57 @@ fn humanSize(allocator: Allocator, n: u64) []const u8 {
     } else {
         return fmt(allocator, "{d:.2} TiB", .{ @as(f64, @floatFromInt(n)) / 1024.0 / 1024.0 / 1024.0 / 1024.0 });
     }
+}
+
+fn compileDtb(allocator: Allocator, input: []const u8) !void {
+    var dtc = std.process.Child.init(&.{ "dtc", "-I", "dts", "-O", "dtb", input }, allocator);
+
+    dtc.stdin_behavior = .Ignore;
+    dtc.stdout_behavior = .Pipe;
+    dtc.stderr_behavior = .Pipe;
+
+    var stdout = std.ArrayListUnmanaged(u8){};
+    defer stdout.deinit(allocator);
+    var stderr = std.ArrayListUnmanaged(u8){};
+    defer stderr.deinit(allocator);
+
+    try dtc.spawn();
+    try dtc.collectOutput(allocator, &stdout, &stderr, 1024 * 1024);
+    const term = try dtc.wait();
+
+    switch (term) {
+        .Exited => |code| switch (code) {
+            0 => std.debug.print("{}", .{ stdout }),
+            else => @panic("TODO"),
+        },
+        else => @panic("TODO"),
+    }
+}
+
+fn decompileDtb(allocator: Allocator, input: []const u8) !std.ArrayListUnmanaged(u8) {
+    var dtc = std.process.Child.init(&.{ "dtc", "-I", "dtb", "-O", "dts", input }, allocator);
+
+    dtc.stdin_behavior = .Ignore;
+    dtc.stdout_behavior = .Pipe;
+    dtc.stderr_behavior = .Pipe;
+
+    var stdout = std.ArrayListUnmanaged(u8){};
+    var stderr = std.ArrayListUnmanaged(u8){};
+    defer stderr.deinit(allocator);
+
+    try dtc.spawn();
+    try dtc.collectOutput(allocator, &stdout, &stderr, DTB_DECOMPILE_MAX_OUTPUT);
+    const term = try dtc.wait();
+
+    switch (term) {
+        .Exited => |code| switch (code) {
+            0 => {},
+            else => @panic("TODO"),
+        },
+        else => @panic("TODO"),
+    }
+
+    return stdout;
 }
 
 const LINUX_GITHUB = "https://github.com/torvalds/linux/tree/master";
@@ -112,6 +174,15 @@ const Platform = struct {
         platform.root.deinit(platform.allocator);
     }
 };
+
+fn nodeNamesFmt(node: *dtb.Node, writer: std.ArrayList(u8).Writer) !void {
+    if (node.parent) |parent| {
+        try nodeNamesFmt(parent, writer);
+        try writer.writeAll("/");
+    }
+
+    try writer.writeAll(node.name);
+}
 
 fn irqListAdd(nodes: []*dtb.Node, irqs: *std.ArrayList(Irq)) !void {
     for (nodes) |node| {
@@ -196,7 +267,6 @@ fn nodeTree(allocator: Allocator, nodes: []*dtb.Node, curr_highlighted_node: ?*d
             }
             if (node.prop(.Interrupts)) |irqs| {
                 if (c.ImGui_TreeNodeEx("interrupts", c.ImGuiTreeNodeFlags_DefaultOpen | c.ImGuiTreeNodeFlags_Leaf)) {
-                    c.ImGui_InputText("input text", str0, IM_ARRAYSIZE(str0));
                     for (irqs) |irq| {
                         // TODO: fix
                         if (node.interruptCells() != 3) {
@@ -281,6 +351,9 @@ pub fn main() !void {
     var platform = try Platform.init(allocator, "dtbs/sel4/qemu_virt_aarch64.dtb");
     defer platform.deinit();
 
+    var dts = try decompileDtb(allocator, "dtbs/sel4/qemu_virt_aarch64.dtb");
+    defer dts.deinit(allocator);
+
     var linux_compatible_map = try compatibleMap(allocator, "linux_compatible_list.txt");
     defer linux_compatible_map.deinit();
     var uboot_compatible_map = try compatibleMap(allocator, "uboot_compatible_list.txt");
@@ -323,6 +396,12 @@ pub fn main() !void {
     c.glfwMakeContextCurrent(window);
     c.glfwSwapInterval(1);
 
+    // Load window icon
+    var icons = std.mem.zeroes([1]c.GLFWimage);
+    icons[0].pixels = c.stbi_load("test-logo.png", &icons[0].width, &icons[0].height, 0, 4);
+    c.glfwSetWindowIcon(window, 1, &icons);
+    c.stbi_image_free(icons[0].pixels);
+
     if (!procs.init(c.glfwGetProcAddress)) return error.InitFailed;
 
     gl.makeProcTableCurrent(&procs);
@@ -358,8 +437,8 @@ pub fn main() !void {
         var open_about = false;
         if (c.ImGui_BeginMainMenuBar()) {
             if (c.ImGui_BeginMenu("File")) {
-                if (c.ImGui_BeginMenu("Examples")) {
-                    if (c.ImGui_BeginMenu("sel4")) {
+                if (c.ImGui_BeginMenu("Example DTBs")) {
+                    if (c.ImGui_BeginMenu("seL4")) {
                         for (sel4_example_dtbs.items) |example| {
                             if (c.ImGui_MenuItem(example)) {
                                 dtb_to_load = example;
@@ -367,7 +446,7 @@ pub fn main() !void {
                         }
                         c.ImGui_EndMenu();
                     }
-                    if (c.ImGui_BeginMenu("linux")) {
+                    if (c.ImGui_BeginMenu("Linux")) {
                         for (linux_example_dtbs.items) |example| {
                             if (c.ImGui_MenuItem(example)) {
                                 dtb_to_load = example;
@@ -403,6 +482,12 @@ pub fn main() !void {
         }
 
         if (c.ImGui_BeginPopupModal("About", null, c.ImGuiWindowFlags_AlwaysAutoResize)) {
+            c.ImGui_Text(ABOUT);
+            c.ImGui_TextLinkOpenURLEx("Home page", "https://ivanvelickovic.com");
+            c.ImGui_SameLine();
+            c.ImGui_TextLinkOpenURLEx("Source Code", "https://git.ivanvelickovic.com/ivanv/dtb_viewer");
+            c.ImGui_Separator();
+            c.ImGui_Text("This program is intended to help people explore and visualise Device Tree Blob files.");
             c.ImGui_Text("Created by Ivan Velickovic in 2025.");
             c.ImGui_EndPopup();
         }
@@ -429,14 +514,20 @@ pub fn main() !void {
         _ = c.ImGui_Begin("Selected Node", null, c.ImGuiWindowFlags_NoCollapse | c.ImGuiWindowFlags_NoResize);
         c.ImGui_SetWindowSize(c.ImVec2 { .x = 1920 / 2, .y = (1080 / 2) - 20 }, 0);
         if (highlighted_node) |node| {
-            c.ImGui_Text(fmt(allocator, "{s}", .{ node.name }));
+            var node_name = std.ArrayList(u8).init(allocator);
+            defer node_name.deinit();
+            const writer = node_name.writer();
+            try nodeNamesFmt(node, writer);
+            c.ImGui_Text(fmt(allocator, "{s}", .{ node_name.items }));
             if (node.prop(.Compatible)) |compatible| {
                 if (linux_compatible_map.get(compatible[0])) |driver| {
                     c.ImGui_Text("Linux driver:");
+                    c.ImGui_SameLine();
                     c.ImGui_TextLinkOpenURLEx(fmt(allocator, "{s}##linux", .{ driver }), fmt(allocator, "{s}/{s}", .{ LINUX_GITHUB, driver }));
                 }
                 if (uboot_compatible_map.get(compatible[0])) |driver| {
                     c.ImGui_Text("U-Boot driver:");
+                    c.ImGui_SameLine();
                     c.ImGui_TextLinkOpenURLEx(fmt(allocator, "{s}##uboot", .{ driver }), fmt(allocator, "{s}/{s}", .{ UBOOT_GITHUB, driver }));
                 }
             }
@@ -485,6 +576,8 @@ pub fn main() !void {
                 c.ImGui_EndTabItem();
             }
             if (c.ImGui_BeginTabItem("Interrupts", null, c.ImGuiTabItemFlags_None)) {
+                var buf = [_:0]u8{0} ** 100;
+                _ = c.ImGui_InputText("input text", &buf, buf.len, 0);
                 for (platform.irqs.items) |irq| {
                     c.ImGui_Text(fmt(allocator, "{d} (0x{x}), {s}", .{ irq.number, irq.number, irq.node.name }));
                 }
