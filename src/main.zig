@@ -32,7 +32,7 @@ fn fmt(allocator: Allocator, comptime s: []const u8, args: anytype) [:0]u8 {
 }
 
 /// Caller owns allocated formatted string
-fn humanSize(allocator: Allocator, n: u64) []const u8 {
+fn humanSize(allocator: Allocator, n: u64) [:0]const u8 {
     if (n < 1024) {
         return fmt(allocator, "{} bytes", .{ n });
     } else if (n < 1024 * 1024) {
@@ -102,11 +102,14 @@ const UBOOT_GITHUB = "https://github.com/u-boot/u-boot/tree/master";
 
 const Platform = struct {
     allocator: Allocator,
+    dtb_bytes: []const u8,
     path: []const u8,
     root: *dtb.Node,
     model: ?[]const u8,
     main_memory: ?MainMemory,
     irqs: std.ArrayList(Irq),
+    model_str: [:0]const u8,
+    path_str: [:0]const u8,
     // cpus: ?ArrayList(Cpu),
 
     // pub const Cpu = struct {
@@ -121,6 +124,7 @@ const Platform = struct {
     pub const MainMemory = struct {
         regions: ArrayList(Region),
         size: u64,
+        fmt: [:0]const u8,
     };
 
     pub const Region = struct {
@@ -131,10 +135,8 @@ const Platform = struct {
     pub fn init(allocator: Allocator, path: []const u8) !Platform {
         const dtb_file = try std.fs.cwd().openFile(path, .{});
         const dtb_size = (try dtb_file.stat()).size;
-        const blob_bytes = try dtb_file.reader().readAllAlloc(allocator, dtb_size);
-        // TODO: do we need to free this in deinit or is it safe to do here?
-        // defer allocator.free(blob_bytes);
-        const root = try dtb.parse(allocator, blob_bytes);
+        const dtb_bytes = try dtb_file.reader().readAllAlloc(allocator, dtb_size);
+        const root = try dtb.parse(allocator, dtb_bytes);
 
         var main_memory: ?MainMemory = null;
         const memory_node = dtb.memory(root);
@@ -150,28 +152,47 @@ const Platform = struct {
                 main_memory_size += region.size;
                 memory_regions.appendAssumeCapacity(region);
             }
+            const human_size = humanSize(allocator, main_memory_size);
+            defer allocator.free(human_size);
             main_memory = .{
                 .regions = memory_regions,
                 .size = main_memory_size,
+                .fmt = fmt(allocator, "Main Memory ({s})", .{ human_size }),
             };
+        }
+
+        var model_str: [:0]const u8 = undefined;
+        if (root.prop(.Model)) |model| {
+            model_str = fmt(allocator, "Model: {s}", .{ model });
+        } else {
+            model_str = "N/A";
         }
 
         return .{
             .allocator = allocator,
+            .dtb_bytes = dtb_bytes,
             .path = path,
             .root = root,
             .model = root.prop(.Model),
             .main_memory = main_memory,
             .irqs = try irqList(allocator, root),
+            .model_str = model_str,
+            .path_str = fmt(allocator, "File: '{s}'", .{ path }),
         };
     }
 
     pub fn deinit(platform: *Platform) void {
         if (platform.main_memory) |m| {
+            platform.allocator.free(m.fmt);
             m.regions.deinit();
         }
         platform.irqs.deinit();
         platform.root.deinit(platform.allocator);
+        if (platform.model != null){
+            platform.allocator.free(platform.model_str);
+        }
+        platform.allocator.free(platform.path_str);
+        platform.allocator.free(platform.dtb_bytes);
     }
 };
 
@@ -300,14 +321,16 @@ fn nodeTree(allocator: Allocator, nodes: []*dtb.Node, curr_highlighted_node: ?*d
     return highlighted_node;
 }
 
-fn compatibleMap(allocator: Allocator, path: []const u8) !std.StringHashMap([]const u8) {
-    var map = std.StringHashMap([]const u8).init(allocator);
+fn readFileFull(allocator: Allocator, path: []const u8) ![]const u8 {
     const file = try std.fs.cwd().openFile(path, .{});
     const size = (try file.stat()).size;
     const bytes = try file.reader().readAllAlloc(allocator, size);
-    // TODO: freeing this is more complicated since the hash map points to
-    // memory in the file.
-    // defer allocator.free(bytes);
+
+    return bytes;
+}
+
+fn compatibleMap(allocator: Allocator, bytes: []const u8) !std.StringHashMap([]const u8) {
+    var map = std.StringHashMap([]const u8).init(allocator);
     var iterator = std.mem.splitScalar(u8, bytes, '\n');
     while (iterator.next()) |line| {
         if (line.len == 0) {
@@ -346,7 +369,12 @@ fn exampleDtbs(allocator: Allocator, dir_path: []const u8) !std.ArrayList([:0]co
 }
 
 pub fn main() !void {
-    const allocator = std.heap.c_allocator;
+    // const allocator = std.heap.c_allocator;
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = gpa.allocator();
+    defer {
+        _ = gpa.deinit();
+    }
 
     var platform = try Platform.init(allocator, "dtbs/sel4/qemu_virt_aarch64.dtb");
     defer platform.deinit();
@@ -354,9 +382,14 @@ pub fn main() !void {
     var dts = try decompileDtb(allocator, "dtbs/sel4/qemu_virt_aarch64.dtb");
     defer dts.deinit(allocator);
 
-    var linux_compatible_map = try compatibleMap(allocator, "linux_compatible_list.txt");
+    // TODO: probably make a struct that has it's own init/deinit and includes the map
+    const linux_compatible_bytes = try readFileFull(allocator, "linux_compatible_list.txt");
+    defer allocator.free(linux_compatible_bytes);
+    var linux_compatible_map = try compatibleMap(allocator, linux_compatible_bytes);
     defer linux_compatible_map.deinit();
-    var uboot_compatible_map = try compatibleMap(allocator, "uboot_compatible_list.txt");
+    const uboot_compatible_bytes = try readFileFull(allocator, "uboot_compatible_list.txt");
+    defer allocator.free(uboot_compatible_bytes);
+    var uboot_compatible_map = try compatibleMap(allocator, uboot_compatible_bytes);
     defer uboot_compatible_map.deinit();
 
     const sel4_example_dtbs = try exampleDtbs(allocator, "dtbs/sel4");
@@ -518,21 +551,32 @@ pub fn main() !void {
             defer node_name.deinit();
             const writer = node_name.writer();
             try nodeNamesFmt(node, writer);
-            c.ImGui_Text(fmt(allocator, "{s}", .{ node_name.items }));
+            try writer.writeAll("\x00");
+            c.ImGui_Text(node_name.items[0..node_name.items.len - 1:0]);
             if (node.prop(.Compatible)) |compatible| {
                 if (linux_compatible_map.get(compatible[0])) |driver| {
                     c.ImGui_Text("Linux driver:");
                     c.ImGui_SameLine();
-                    c.ImGui_TextLinkOpenURLEx(fmt(allocator, "{s}##linux", .{ driver }), fmt(allocator, "{s}/{s}", .{ LINUX_GITHUB, driver }));
+                    const id = fmt(allocator, "{s}##linux", .{ driver });
+                    defer allocator.free(id);
+                    const url = fmt(allocator, "{s}/{s}", .{ LINUX_GITHUB, driver });
+                    defer allocator.free(url);
+                    c.ImGui_TextLinkOpenURLEx(id, url);
                 }
                 if (uboot_compatible_map.get(compatible[0])) |driver| {
                     c.ImGui_Text("U-Boot driver:");
                     c.ImGui_SameLine();
-                    c.ImGui_TextLinkOpenURLEx(fmt(allocator, "{s}##uboot", .{ driver }), fmt(allocator, "{s}/{s}", .{ UBOOT_GITHUB, driver }));
+                    const id = fmt(allocator, "{s}##uboot", .{ driver });
+                    defer allocator.free(id);
+                    const url = fmt(allocator, "{s}/{s}", .{ UBOOT_GITHUB, driver });
+                    defer allocator.free(url);
+                    c.ImGui_TextLinkOpenURLEx(id, url);
                 }
             }
             for (node.props) |prop| {
-                c.ImGui_Text(fmt(allocator, "{any}", .{ prop }));
+                const prop_fmt = fmt(allocator, "{any}", .{ prop });
+                defer allocator.free(prop_fmt);
+                c.ImGui_Text(prop_fmt);
             }
         }
         c.ImGui_End();
@@ -544,23 +588,21 @@ pub fn main() !void {
         c.ImGui_SetWindowSize(c.ImVec2 { .x = 1920 / 2, .y = 1080 / 2 }, 0);
         if (c.ImGui_BeginTabBar("info", c.ImGuiTabBarFlags_None)) {
             if (c.ImGui_BeginTabItem("Platform", null, c.ImGuiTabItemFlags_None)) {
-                c.ImGui_Text(fmt(allocator, "File: '{s}'", .{ platform.path }));
-                const model = platform.model orelse "n/a";
-                c.ImGui_Text(fmt(allocator, "Model: {s}", .{ model }));
-                // TODO: don't .?
-                const main_memory_text = fmt(allocator, "Main Memory ({s})", .{ humanSize(allocator, platform.main_memory.?.size )});
-                defer allocator.free(main_memory_text);
-                if (c.ImGui_TreeNodeEx(main_memory_text, c.ImGuiTreeNodeFlags_DefaultOpen)) {
-                    for (platform.main_memory.?.regions.items) |region| {
-                        const human_size = humanSize(allocator, region.size);
-                        defer allocator.free(human_size);
-                        const addr = fmt(allocator, "[0x{x}..0x{x}] ({s})", .{ region.addr, region.addr + region.size, human_size });
-                        defer allocator.free(addr);
-                        if (c.ImGui_TreeNodeEx(addr, c.ImGuiTreeNodeFlags_Leaf)) {
-                            c.ImGui_TreePop();
+                c.ImGui_Text(platform.path_str);
+                c.ImGui_Text(platform.model_str);
+                if (platform.main_memory) |main_memory| {
+                    if (c.ImGui_TreeNodeEx(main_memory.fmt, c.ImGuiTreeNodeFlags_DefaultOpen)) {
+                        for (main_memory.regions.items) |region| {
+                            const human_size = humanSize(allocator, region.size);
+                            defer allocator.free(human_size);
+                            const addr = fmt(allocator, "[0x{x}..0x{x}] ({s})", .{ region.addr, region.addr + region.size, human_size });
+                            defer allocator.free(addr);
+                            if (c.ImGui_TreeNodeEx(addr, c.ImGuiTreeNodeFlags_Leaf)) {
+                                c.ImGui_TreePop();
+                            }
                         }
+                        c.ImGui_TreePop();
                     }
-                    c.ImGui_TreePop();
                 }
                 if (platform.root.propAt(&.{ "cpus", "cpu@0" }, .RiscvIsaExtensions)) |extensions| {
                     if (c.ImGui_TreeNodeEx("RISC-V ISA Extensions", c.ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -579,7 +621,9 @@ pub fn main() !void {
                 var buf = [_:0]u8{0} ** 100;
                 _ = c.ImGui_InputText("input text", &buf, buf.len, 0);
                 for (platform.irqs.items) |irq| {
-                    c.ImGui_Text(fmt(allocator, "{d} (0x{x}), {s}", .{ irq.number, irq.number, irq.node.name }));
+                    const irq_fmt = fmt(allocator, "{d} (0x{x}), {s}", .{ irq.number, irq.number, irq.node.name });
+                    defer allocator.free(irq_fmt);
+                    c.ImGui_Text(irq_fmt);
                 }
                 c.ImGui_EndTabItem();
             }
