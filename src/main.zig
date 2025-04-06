@@ -1,6 +1,5 @@
 const std = @import("std");
 const dtb = @import("dtb.zig");
-const gl = @import("gl");
 const Allocator = std.mem.Allocator;
 const ArrayList = std.ArrayList;
 
@@ -9,11 +8,13 @@ const VERSION = "0.1.0";
 const ABOUT = std.fmt.comptimePrint("DTB viewer v{s}", .{ VERSION });
 
 const c = @cImport({
-    @cDefine("GLFW_INCLUDE_NONE", "1");
+    @cDefine("CIMGUI_DEFINE_ENUMS_AND_STRUCTS", {});
+    @cDefine("CIMGUI_USE_OPENGL3", {});
+    @cDefine("CIMGUI_USE_GLFW", {});
+    // @cDefine("GLFW_INCLUDE_NONE", "1");
+    @cInclude("cimgui.h");
+    @cInclude("cimgui_impl.h");
     @cInclude("GLFW/glfw3.h");
-    @cInclude("dcimgui.h");
-    @cInclude("backends/dcimgui_impl_glfw.h");
-    @cInclude("backends/dcimgui_impl_opengl3.h");
     @cDefine("STBI_ONLY_PNG", "");
     @cDefine("STB_IMAGE_IMPLEMENTATION", "");
     // @cDefine("STBI_NO_STDIO", "");
@@ -262,39 +263,39 @@ fn nodeTree(allocator: Allocator, nodes: []*dtb.Node, curr_highlighted_node: ?*d
         if (expand_all) {
             flags |= c.ImGuiTreeNodeFlags_DefaultOpen;
         }
-        if (c.ImGui_TreeNodeEx(c_name.ptr, flags)) {
+        if (c.igTreeNodeEx_Str(c_name.ptr, flags)) {
             // TODO: maybe want better hover flags
-            if (c.ImGui_IsItemToggledOpen()) {
+            if (c.igIsItemToggledOpen()) {
                 highlighted_node = node;
             }
             if (node.prop(.Compatible)) |compatibles| {
-                if (c.ImGui_TreeNodeEx("compatible", c.ImGuiTreeNodeFlags_DefaultOpen | c.ImGuiTreeNodeFlags_Leaf)) {
+                if (c.igTreeNodeEx_Str("compatible", c.ImGuiTreeNodeFlags_DefaultOpen | c.ImGuiTreeNodeFlags_Leaf)) {
                     for (compatibles) |compatible| {
                         const compatible_str = fmt(allocator, "{s}", .{ compatible });
                         defer allocator.free(compatible_str);
-                        if (c.ImGui_TreeNodeEx(compatible_str, c.ImGuiTreeNodeFlags_Leaf)) {
-                            c.ImGui_TreePop();
+                        if (c.igTreeNodeEx_Str(compatible_str, c.ImGuiTreeNodeFlags_Leaf)) {
+                            c.igTreePop();
                         }
                     }
-                    c.ImGui_TreePop();
+                    c.igTreePop();
                 }
             }
             if (node.prop(.Reg)) |regions| {
-                if (c.ImGui_TreeNodeEx("memory", c.ImGuiTreeNodeFlags_DefaultOpen | c.ImGuiTreeNodeFlags_Leaf)) {
+                if (c.igTreeNodeEx_Str("memory", c.ImGuiTreeNodeFlags_DefaultOpen | c.ImGuiTreeNodeFlags_Leaf)) {
                     for (regions) |region| {
                         const human_size = humanSize(allocator, @intCast(region[1]));
                         defer allocator.free(human_size);
                         const addr = fmt(allocator, "[0x{x}..0x{x}] ({s})", .{ region[0], region[0] + region[1], human_size });
                         defer allocator.free(addr);
-                        if (c.ImGui_TreeNodeEx(addr, c.ImGuiTreeNodeFlags_Leaf)) {
-                            c.ImGui_TreePop();
+                        if (c.igTreeNodeEx_Str(addr, c.ImGuiTreeNodeFlags_Leaf)) {
+                            c.igTreePop();
                         }
                     }
-                    c.ImGui_TreePop();
+                    c.igTreePop();
                 }
             }
             if (node.prop(.Interrupts)) |irqs| {
-                if (c.ImGui_TreeNodeEx("interrupts", c.ImGuiTreeNodeFlags_DefaultOpen | c.ImGuiTreeNodeFlags_Leaf)) {
+                if (c.igTreeNodeEx_Str("interrupts", c.ImGuiTreeNodeFlags_DefaultOpen | c.ImGuiTreeNodeFlags_Leaf)) {
                     for (irqs) |irq| {
                         // TODO: fix
                         if (node.interruptCells() != 3) {
@@ -303,25 +304,25 @@ fn nodeTree(allocator: Allocator, nodes: []*dtb.Node, curr_highlighted_node: ?*d
                         {
                             const irq_str = fmt(allocator, "GIC visibile: 0x{x} ({d})", .{ irq[1], irq[1] });
                             defer allocator.free(irq_str);
-                            if (c.ImGui_TreeNodeEx(irq_str, c.ImGuiTreeNodeFlags_Leaf)) {
-                                c.ImGui_TreePop();
+                            if (c.igTreeNodeEx_Str(irq_str, c.ImGuiTreeNodeFlags_Leaf)) {
+                                c.igTreePop();
                             }
                         }
                         {
                             const irq_str = fmt(allocator, "software visibile: 0x{x} ({d})", .{ irq[1] + 32, irq[1] + 32 });
                             defer allocator.free(irq_str);
-                            if (c.ImGui_TreeNodeEx(irq_str, c.ImGuiTreeNodeFlags_Leaf)) {
-                                c.ImGui_TreePop();
+                            if (c.igTreeNodeEx_Str(irq_str, c.ImGuiTreeNodeFlags_Leaf)) {
+                                c.igTreePop();
                             }
                         }
                     }
-                    c.ImGui_TreePop();
+                    c.igTreePop();
                 }
             }
             if (node.children.len != 0) {
                 highlighted_node = try nodeTree(allocator, node.children, highlighted_node, expand_all);
             }
-            c.ImGui_TreePop();
+            c.igTreePop();
         }
     }
 
@@ -414,7 +415,7 @@ pub fn main() !void {
         linux_example_dtbs.deinit();
     }
 
-    var procs: gl.ProcTable = undefined;
+    // var procs: gl.ProcTable = undefined;
 
     _ = c.glfwSetErrorCallback(errorCallback);
 
@@ -444,26 +445,27 @@ pub fn main() !void {
 
     _ = c.glfwSetDropCallback(window, dropCallback);
 
-    if (!procs.init(c.glfwGetProcAddress)) return error.InitFailed;
+    // if (!procs.init(c.glfwGetProcAddress)) return error.InitFailed;
 
-    gl.makeProcTableCurrent(&procs);
-    defer gl.makeProcTableCurrent(null);
+    // gl.makeProcTableCurrent(&procs);
+    // defer gl.makeProcTableCurrent(null);
 
-    _ = c.CIMGUI_CHECKVERSION();
-    _ = c.ImGui_CreateContext(null);
-    defer c.ImGui_DestroyContext(null);
+    // TODO: not sure what to do about CIMGUI_CHECKVERSION
+    // _ = c.CIMGUI_CHECKVERSION();
+    _ = c.igCreateContext(null);
+    defer c.igDestroyContext(null);
 
-    const imio = c.ImGui_GetIO();
+    const imio = c.igGetIO_Nil();
     imio.*.ConfigFlags = c.ImGuiConfigFlags_NavEnableKeyboard;
 
-    c.ImGui_StyleColorsDark(null);
-    c.ImGuiStyle_ScaleAllSizes(c.ImGui_GetStyle(), 1.5);
+    c.igStyleColorsDark(null);
+    c.ImGuiStyle_ScaleAllSizes(c.igGetStyle(), 1.5);
 
-    _ = c.cImGui_ImplGlfw_InitForOpenGL(window, true);
-    defer c.cImGui_ImplGlfw_Shutdown();
+    _ = c.ImGui_ImplGlfw_InitForOpenGL(window, true);
+    defer c.ImGui_ImplGlfw_Shutdown();
 
-    _ = c.cImGui_ImplOpenGL3_InitEx(GLSL_VERSION);
-    defer c.cImGui_ImplOpenGL3_Shutdown();
+    _ = c.ImGui_ImplOpenGL3_Init(GLSL_VERSION);
+    defer c.ImGui_ImplOpenGL3_Shutdown();
 
     // TODO: move this into platform struct
     var highlighted_node: ?*dtb.Node = null;
@@ -472,41 +474,41 @@ pub fn main() !void {
     while (c.glfwWindowShouldClose(window) != c.GLFW_TRUE) {
         c.glfwPollEvents();
 
-        c.cImGui_ImplOpenGL3_NewFrame();
-        c.cImGui_ImplGlfw_NewFrame();
-        c.ImGui_NewFrame();
+        c.ImGui_ImplOpenGL3_NewFrame();
+        c.ImGui_ImplGlfw_NewFrame();
+        c.igNewFrame();
 
         var open_about = false;
-        if (c.ImGui_BeginMainMenuBar()) {
-            if (c.ImGui_BeginMenu("File")) {
-                if (c.ImGui_BeginMenu("Example DTBs")) {
-                    if (c.ImGui_BeginMenu("seL4")) {
+        if (c.igBeginMainMenuBar()) {
+            if (c.igBeginMenu("File", true)) {
+                if (c.igBeginMenu("Example DTBs", true)) {
+                    if (c.igBeginMenu("seL4", true)) {
                         for (sel4_example_dtbs.items) |example| {
-                            if (c.ImGui_MenuItem(example)) {
+                            if (c.igMenuItem_Bool(example, null, false, true)) {
                                 dtb_to_load = example;
                             }
                         }
-                        c.ImGui_EndMenu();
+                        c.igEndMenu();
                     }
-                    if (c.ImGui_BeginMenu("Linux")) {
+                    if (c.igBeginMenu("Linux", true)) {
                         for (linux_example_dtbs.items) |example| {
-                            if (c.ImGui_MenuItem(example)) {
+                            if (c.igMenuItem_Bool(example, null, false, true)) {
                                 dtb_to_load = example;
                             }
                         }
-                        c.ImGui_EndMenu();
+                        c.igEndMenu();
                     }
-                    c.ImGui_EndMenu();
+                    c.igEndMenu();
                 }
-                c.ImGui_EndMenu();
+                c.igEndMenu();
             }
-            if (c.ImGui_BeginMenu("Help")) {
-                if (c.ImGui_MenuItem("About")) {
+            if (c.igBeginMenu("Help", true)) {
+                if (c.igMenuItem_Bool("About", null, false, true)) {
                     open_about = true;
                 }
-                c.ImGui_EndMenu();
+                c.igEndMenu();
             }
-            c.ImGui_EndMainMenuBar();
+            c.igEndMainMenuBar();
         }
 
         if (dtb_to_load) |d| {
@@ -520,28 +522,28 @@ pub fn main() !void {
         }
 
         if (open_about) {
-            c.ImGui_OpenPopup("About", 0);
+            c.igOpenPopup_Str("About", 0);
         }
 
-        if (c.ImGui_BeginPopupModal("About", null, c.ImGuiWindowFlags_AlwaysAutoResize)) {
-            c.ImGui_Text(ABOUT);
-            c.ImGui_TextLinkOpenURLEx("Home page", "https://ivanvelickovic.com");
-            c.ImGui_SameLine();
-            c.ImGui_TextLinkOpenURLEx("Source Code", "https://git.ivanvelickovic.com/ivanv/dtb_viewer");
-            c.ImGui_Separator();
-            c.ImGui_Text("This program is intended to help people explore and visualise Device Tree Blob files.");
-            c.ImGui_Text("Created by Ivan Velickovic in 2025.");
-            c.ImGui_EndPopup();
+        if (c.igBeginPopupModal("About", null, c.ImGuiWindowFlags_AlwaysAutoResize)) {
+            c.igText(ABOUT);
+            c.igTextLinkOpenURL("Home page", "https://ivanvelickovic.com");
+            c.igSameLine(0, 0);
+            c.igTextLinkOpenURL("Source Code", "https://git.ivanvelickovic.com/ivanv/dtb_viewer");
+            c.igSeparator();
+            c.igText("This program is intended to help people explore and visualise Device Tree Blob files.");
+            c.igText("Created by Ivan Velickovic in 2025.");
+            c.igEndPopup();
         }
 
-        c.ImGui_SetNextWindowPos(c.ImVec2 { .x = 0, .y = 20 }, 0);
-        _ = c.ImGui_Begin("DTB", null, c.ImGuiWindowFlags_NoCollapse | c.ImGuiWindowFlags_NoResize);
-        c.ImGui_SetWindowSize(c.ImVec2 { .x = 1920 / 2, .y = 1080 - 20 }, 0);
+        c.igSetNextWindowPos(c.ImVec2 { .x = 0, .y = 20 }, 0, .{});
+        _ = c.igBegin("DTB", null, c.ImGuiWindowFlags_NoCollapse | c.ImGuiWindowFlags_NoResize);
+        c.igSetWindowSize_Vec2(c.ImVec2 { .x = 1920 / 2, .y = 1080 - 20 }, 0);
 
         // TODO: this logic is definetely wrong
-        const expand_all = c.ImGui_Button("Expand All");
-        c.ImGui_SameLine();
-        const collapse_all = c.ImGui_Button("Collapse All");
+        const expand_all = c.igButton("Expand All", .{});
+        c.igSameLine(0, 0);
+        const collapse_all = c.igButton("Collapse All", .{});
         if (!nodes_expand_all) {
             nodes_expand_all = expand_all;
         } else if (collapse_all) {
@@ -549,107 +551,108 @@ pub fn main() !void {
         }
 
         highlighted_node = try nodeTree(allocator, platform.root.children, highlighted_node, nodes_expand_all);
-        c.ImGui_End();
+        c.igEnd();
 
         // === Selected Node Window ===
-        c.ImGui_SetNextWindowPos(c.ImVec2 { .x = 1920 / 2, .y = 20 }, 0);
-        _ = c.ImGui_Begin("Selected Node", null, c.ImGuiWindowFlags_NoCollapse | c.ImGuiWindowFlags_NoResize);
-        c.ImGui_SetWindowSize(c.ImVec2 { .x = 1920 / 2, .y = (1080 / 2) - 20 }, 0);
+        c.igSetNextWindowPos(c.ImVec2 { .x = 1920 / 2, .y = 20 }, 0, .{});
+        _ = c.igBegin("Selected Node", null, c.ImGuiWindowFlags_NoCollapse | c.ImGuiWindowFlags_NoResize);
+        c.igSetWindowSize_Vec2(c.ImVec2 { .x = 1920 / 2, .y = (1080 / 2) - 20 }, 0);
         if (highlighted_node) |node| {
             var node_name = std.ArrayList(u8).init(allocator);
             defer node_name.deinit();
             const writer = node_name.writer();
             try nodeNamesFmt(node, writer);
             try writer.writeAll("\x00");
-            c.ImGui_Text(node_name.items[0..node_name.items.len - 1:0]);
+            c.igText(node_name.items[0..node_name.items.len - 1:0]);
             if (node.prop(.Compatible)) |compatible| {
                 if (linux_compatible_map.get(compatible[0])) |driver| {
-                    c.ImGui_Text("Linux driver:");
-                    c.ImGui_SameLine();
+                    c.igText("Linux driver:");
+                    c.igSameLine(0, 0);
                     const id = fmt(allocator, "{s}##linux", .{ driver });
                     defer allocator.free(id);
                     const url = fmt(allocator, "{s}/{s}", .{ LINUX_GITHUB, driver });
                     defer allocator.free(url);
-                    c.ImGui_TextLinkOpenURLEx(id, url);
+                    c.igTextLinkOpenURL(id, url);
                 }
                 if (uboot_compatible_map.get(compatible[0])) |driver| {
-                    c.ImGui_Text("U-Boot driver:");
-                    c.ImGui_SameLine();
+                    c.igText("U-Boot driver:");
+                    c.igSameLine(0, 0);
                     const id = fmt(allocator, "{s}##uboot", .{ driver });
                     defer allocator.free(id);
                     const url = fmt(allocator, "{s}/{s}", .{ UBOOT_GITHUB, driver });
                     defer allocator.free(url);
-                    c.ImGui_TextLinkOpenURLEx(id, url);
+                    c.igTextLinkOpenURL(id, url);
                 }
             }
             for (node.props) |prop| {
                 const prop_fmt = fmt(allocator, "{any}", .{ prop });
                 defer allocator.free(prop_fmt);
-                c.ImGui_Text(prop_fmt);
+                c.igText(prop_fmt);
             }
         }
-        c.ImGui_End();
+        c.igEnd();
         // ===========================
 
         // === Details Window ===
-        c.ImGui_SetNextWindowPos(c.ImVec2 { .x = 1920 / 2, .y = 1080 / 2 }, 0);
-        _ = c.ImGui_Begin("Details", null, c.ImGuiWindowFlags_NoCollapse | c.ImGuiWindowFlags_NoResize);
-        c.ImGui_SetWindowSize(c.ImVec2 { .x = 1920 / 2, .y = 1080 / 2 }, 0);
-        if (c.ImGui_BeginTabBar("info", c.ImGuiTabBarFlags_None)) {
-            if (c.ImGui_BeginTabItem("Platform", null, c.ImGuiTabItemFlags_None)) {
-                c.ImGui_Text(platform.path_str);
-                c.ImGui_Text(platform.model_str);
+        c.igSetNextWindowPos(c.ImVec2 { .x = 1920 / 2, .y = 1080 / 2 }, 0, .{});
+        _ = c.igBegin("Details", null, c.ImGuiWindowFlags_NoCollapse | c.ImGuiWindowFlags_NoResize);
+        c.igSetWindowSize_Vec2(c.ImVec2 { .x = 1920 / 2, .y = 1080 / 2 }, 0);
+        if (c.igBeginTabBar("info", c.ImGuiTabBarFlags_None)) {
+            if (c.igBeginTabItem("Platform", null, c.ImGuiTabItemFlags_None)) {
+                c.igText(platform.path_str);
+                c.igText(platform.model_str);
                 if (platform.main_memory) |main_memory| {
-                    if (c.ImGui_TreeNodeEx(main_memory.fmt, c.ImGuiTreeNodeFlags_DefaultOpen)) {
+                    if (c.igTreeNodeEx_Str(main_memory.fmt, c.ImGuiTreeNodeFlags_DefaultOpen)) {
                         for (main_memory.regions.items) |region| {
                             const human_size = humanSize(allocator, region.size);
                             defer allocator.free(human_size);
                             const addr = fmt(allocator, "[0x{x}..0x{x}] ({s})", .{ region.addr, region.addr + region.size, human_size });
                             defer allocator.free(addr);
-                            if (c.ImGui_TreeNodeEx(addr, c.ImGuiTreeNodeFlags_Leaf)) {
-                                c.ImGui_TreePop();
+                            if (c.igTreeNodeEx_Str(addr, c.ImGuiTreeNodeFlags_Leaf)) {
+                                c.igTreePop();
                             }
                         }
-                        c.ImGui_TreePop();
+                        c.igTreePop();
                     }
                 }
                 if (platform.root.propAt(&.{ "cpus", "cpu@0" }, .RiscvIsaExtensions)) |extensions| {
-                    if (c.ImGui_TreeNodeEx("RISC-V ISA Extensions", c.ImGuiTreeNodeFlags_DefaultOpen)) {
+                    if (c.igTreeNodeEx_Str("RISC-V ISA Extensions", c.ImGuiTreeNodeFlags_DefaultOpen)) {
                         for (extensions) |extension| {
                             const c_extension = fmt(allocator, "{s}", .{ extension });
-                            if (c.ImGui_TreeNodeEx(c_extension, c.ImGuiTreeNodeFlags_Leaf)) {
-                                c.ImGui_TreePop();
+                            defer allocator.free(c_extension);
+                            if (c.igTreeNodeEx_Str(c_extension, c.ImGuiTreeNodeFlags_Leaf)) {
+                                c.igTreePop();
                             }
                         }
-                        c.ImGui_TreePop();
+                        c.igTreePop();
                     }
                 }
-                c.ImGui_EndTabItem();
+                c.igEndTabItem();
             }
-            if (c.ImGui_BeginTabItem("Interrupts", null, c.ImGuiTabItemFlags_None)) {
+            if (c.igBeginTabItem("Interrupts", null, c.ImGuiTabItemFlags_None)) {
                 var buf = [_:0]u8{0} ** 100;
-                _ = c.ImGui_InputText("input text", &buf, buf.len, 0);
+                _ = c.igInputText("input text", &buf, buf.len, 0, null, null);
                 for (platform.irqs.items) |irq| {
                     const irq_fmt = fmt(allocator, "{d} (0x{x}), {s}", .{ irq.number, irq.number, irq.node.name });
                     defer allocator.free(irq_fmt);
-                    c.ImGui_Text(irq_fmt);
+                    c.igText(irq_fmt);
                 }
-                c.ImGui_EndTabItem();
+                c.igEndTabItem();
             }
-            c.ImGui_EndTabBar();
+            c.igEndTabBar();
         }
-        c.ImGui_End();
+        c.igEnd();
         // ===========================
 
-        c.ImGui_Render();
+        c.igRender();
 
         var width: c_int = 0;
         var height: c_int = 0;
         c.glfwGetFramebufferSize(window, &width, &height);
-        gl.Viewport(0, 0, width, height);
-        gl.ClearColor(0.2, 0.2, 0.2, 1.0);
-        gl.Clear(gl.COLOR_BUFFER_BIT);
-        c.cImGui_ImplOpenGL3_RenderDrawData(c.ImGui_GetDrawData());
+        c.glViewport(0, 0, width, height);
+        c.glClearColor(0.2, 0.2, 0.2, 1.0);
+        c.glClear(c.GL_COLOR_BUFFER_BIT);
+        c.ImGui_ImplOpenGL3_RenderDrawData(c.igGetDrawData());
 
         c.glfwSwapBuffers(window);
     }
