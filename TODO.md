@@ -1,5 +1,6 @@
 * [x] main memory
 * [x] in selected node, show full path to node rather than just the name
+* [x] macOS support
 * [x] U-Boot driver for a specific device
 * [x] Linux driver for a specific device
     * [ ] import Linux at runtime and have it search that directroy for the list?
@@ -15,7 +16,6 @@
 * [ ] Help menu (point to GitHub as well)
 * [ ] opening files
 * [ ] heaps of styling to do
-* [ ] macOS support
 * [ ] In platform info show what RISC-V extensions a CPU supports in a nice way
 * [ ] list lists of strings as a drop-down in the 'selected node' view
 * [ ] dtb properites to parse
@@ -34,3 +34,70 @@
 * [ ] click on addresses or interrupts to copy them to clipboard
 * [ ] memory view, e.g let's say i just have an address and need to find the
       coressponding device
+
+
+```
+: GLFW Error '65544'': Cocoa: Failed to query display mode
+error: GLFW Error '65544'': Cocoa: Failed to query display mode
+error: GLFW Error '65544'': Cocoa: Failed to query display mode
+error: GLFW Error '65544'': Cocoa: Failed to query display mode
+error: GLFW Error '65544'': Cocoa: Failed to query display mode
+error: GLFW Error '65544'': Cocoa: Failed to query display mode
+error: GLFW Error '65544'': Cocoa: Failed to query display mode
+error: GLFW Error '65544'': Cocoa: Failed to query display mode
+error: GLFW Error '65544'': Cocoa: Failed to query display mode
+error: GLFW Error '65544'': Cocoa: Failed to query display mode
+error: GLFW Error '65544'': Cocoa: Failed to query display mode
+error: GLFW Error '65544'': Cocoa: Failed to query display mode
+error: GLFW Error '65544'': Cocoa: Failed to query display mode
+error: GLFW Error '65544'': Cocoa: Failed to query display mode
+error: GLFW Error '65544'': Cocoa: Failed to query display mode
+error: GLFW Error '65544'': Cocoa: Failed to query display mode
+error: GLFW Error '65544'': Cocoa: Failed to query display mode
+error: GLFW Error '65544'': Cocoa: Failed to query display mode
+error: GLFW Error '65544'': Cocoa: Failed to query display mode
+error: GLFW Error '65544'': Cocoa: Failed to query display mode
+error: GLFW Error '65544'': Cocoa: Failed to query display mode
+error: GLFW Error '65544'': Cocoa: Failed to query display mode
+error: GLFW Error '65544'': Cocoa: Failed to query display mode
+error: GLFW Error '65544'': Cocoa: Failed to query display mode
+error: GLFW Error '65544'': Cocoa: Failed to query display mode
+error: GLFW Error '65544'': Cocoa: Failed to query display mode
+error: GLFW Error '65544'': Cocoa: Failed to query display mode
+error: GLFW Error '65544'': Cocoa: Failed to query display mode
+error: GLFW Error '65544'': Cocoa: Failed to query display mode
+error: GLFW Error '65544'': Cocoa: Failed to query display mode
+error: GLFW Error '65544'': Cocoa: Failed to query display mode
+error: GLFW Error '65544'': Cocoa: Failed to query display mode
+error: GLFW Error '65544'': Cocoa: Failed to query display mode
+error: GLFW Error '65544'': Cocoa: Failed to query display mode
+error: GLFW Error '65544'': Cocoa: Failed to query display mode
+error: GLFW Error '65544'': Cocoa: Failed to query display mode
+error: GLFW Error '65544'': Cocoa: Failed to query display mode
+error: GLFW Error '65544'': Cocoa: Failed to query display mode
+error: GLFW Error '65544'': Cocoa: Failed to query display mode
+error: GLFW Error '65544'': Cocoa: Failed to query display mode
+error: GLFW Error '65544'': Cocoa: Failed to query display mode
+error: GLFW Error '65544'': Cocoa: Failed to query display mode
+error: GLFW Error '65544'': Cocoa: Failed to query display mode
+error: GLFW Error '65544'': Cocoa: Failed to query display mode
+error: GLFW Error '65544'': Cocoa: Failed to query display mode
+error: GLFW Error '65544'': Cocoa: Failed to query display mode
+error: GLFW Error '65544'': Cocoa: Failed to query display mode
+error: GLFW Error '65544'': Cocoa: Failed to query display mode
+error: GLFW Error '65544'': Cocoa: Failed to query display mode
+error: GLFW Error '65544'': Cocoa: Failed to query display mode
+error: GLFW Error '65544'': Cocoa: Failed to query display mode
+error: GLFW Error '65544'': Cocoa: Cannot query workarea without screen
+error: GLFW Error '65544'': Cocoa: Cannot query content scale without screen
+Assertion failed: (new_dpi_scale > 0.0f && new_dpi_scale < 99.0f), function UpdateViewportsNewFrame, file imgui.cpp, line 16029.
+run
+└─ run dtb_viewer failure
+error: the following command terminated unexpectedly:
+/Users/ivanv/dev/dtb_viewer/zig-out/bin/dtb_viewer dtbs/sel4/odroidc4.dtb
+Build Summary: 3/5 steps succeeded; 1 failed
+run transitive failure
+└─ run dtb_viewer failure
+error: the following build command failed with exit code 1:
+/Users/ivanv/dev/dtb_viewer/.zig-cache/o/3aa2679eac9fdc05d9bbba627e0600d0/build /Users/ivanv/zigs/zig-macos-aarch64-0.15.0-dev.155+acfdad858/zig /Users/ivanv/zigs/zig-macos-aarch64-0.15.0-dev.155+acfdad858/lib /Users/ivanv/dev/dtb_viewer /Users/ivanv/dev/dtb_viewer/.zig-cache /Users/iv
+```

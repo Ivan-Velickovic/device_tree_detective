@@ -112,7 +112,7 @@ const UBOOT_GITHUB = "https://github.com/u-boot/u-boot/tree/master";
 const Platform = struct {
     allocator: Allocator,
     dtb_bytes: []const u8,
-    path: []const u8,
+    path: [:0]const u8,
     root: *dtb.Node,
     model: ?[]const u8,
     regions: std.ArrayList(Platform.Region),
@@ -190,7 +190,7 @@ const Platform = struct {
         return .{
             .allocator = allocator,
             .dtb_bytes = dtb_bytes,
-            .path = path,
+            .path = try allocator.dupeZ(u8, path),
             .root = root,
             .model = root.prop(.Model),
             .main_memory = main_memory,
@@ -206,6 +206,7 @@ const Platform = struct {
             platform.allocator.free(m.fmt);
             m.regions.deinit();
         }
+        platform.allocator.free(platform.path);
         platform.irqs.deinit();
         platform.regions.deinit();
         platform.root.deinit(platform.allocator);
@@ -417,6 +418,45 @@ fn memoryInputTextCallback(_: ?*c.ImGuiInputTextCallbackData) callconv(.C) c_int
     return 0;
 }
 
+const usage_text =
+    \\usage: dtb_viewer [-h|--help] [DTB PATHS ...]
+    \\
+    \\ TODO
+    \\
+;
+
+const Args = struct {
+    paths: std.ArrayList([]const u8),
+
+    pub fn parse(allocator: Allocator, args: []const []const u8) !Args {
+        const stdout = std.io.getStdOut();
+
+        const usage_text_fmt = fmt(allocator, usage_text, .{});
+        defer allocator.free(usage_text_fmt);
+
+        var paths = std.ArrayList([]const u8).init(allocator);
+
+        var arg_i: usize = 1;
+        while (arg_i < args.len) : (arg_i += 1) {
+            const arg = args[arg_i];
+            if (std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "--help")) {
+                try stdout.writeAll(usage_text_fmt);
+                std.process.exit(0);
+            } else {
+                try paths.append(arg);
+            }
+        }
+
+        return .{
+            .paths = paths,
+        };
+    }
+
+    pub fn deinit(args: Args) void {
+        args.paths.deinit();
+    }
+};
+
 pub fn main() !void {
     // const allocator = std.heap.c_allocator;
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -425,10 +465,33 @@ pub fn main() !void {
         _ = gpa.deinit();
     }
 
-    var platform = try Platform.init(allocator, "dtbs/sel4/qemu_virt_aarch64.dtb");
-    defer platform.deinit();
+    const process_args = try std.process.argsAlloc(allocator);
+    defer std.process.argsFree(allocator, process_args);
+    const args = try Args.parse(allocator, process_args);
+    defer args.deinit();
 
-    var dts = try decompileDtb(allocator, "dtbs/sel4/qemu_virt_aarch64.dtb");
+    var open_platforms = std.ArrayList(Platform).init(allocator);
+    defer {
+        for (open_platforms.items) |*p| {
+            p.deinit();
+        }
+        open_platforms.deinit();
+    }
+
+    // Do not need to deinit since it will be done when we deinit the whole
+    // list of platforms.
+    var init_platform: Platform = undefined;
+    if (args.paths.items.len > 0) {
+        init_platform = try Platform.init(allocator, args.paths.items[0]);
+    } else {
+        init_platform = try Platform.init(allocator, "dtbs/sel4/qemu_virt_aarch64.dtb");
+    }
+
+    try open_platforms.append(init_platform);
+
+    var platform = &open_platforms.getLast();
+
+    var dts = try decompileDtb(allocator, init_platform.path);
     defer dts.deinit(allocator);
 
     // TODO: probably make a struct that has it's own init/deinit and includes the map
@@ -566,11 +629,11 @@ pub fn main() !void {
 
         if (dtb_to_load) |d| {
             if (!std.mem.eql(u8, platform.path, d)) {
-                // TODO: pretty sus on this
-                platform.deinit();
-                platform = try Platform.init(allocator, d);
                 highlighted_node = null;
                 nodes_expand_all = false;
+                // TODO: check if it platform already exists first
+                try open_platforms.append(try Platform.init(allocator, d));
+                platform = &open_platforms.getLast();
             }
         }
 
@@ -582,11 +645,12 @@ pub fn main() !void {
             c.igOpenPopup_Str("About", 0);
         }
 
-        if (c.igBeginPopupModal("About", null, c.ImGuiWindowFlags_AlwaysAutoResize)) {
+        var p_open = true;
+        if (c.igBeginPopupModal("About", &p_open, c.ImGuiWindowFlags_AlwaysAutoResize)) {
             c.igText(ABOUT);
-            c.igTextLinkOpenURL("Home page", "https://ivanvelickovic.com");
-            c.igSameLine(0, 0);
-            c.igTextLinkOpenURL("Source Code", "https://git.ivanvelickovic.com/ivanv/dtb_viewer");
+            c.igTextLinkOpenURL("Home page", "TODO");
+            c.igSameLine(0, -1.0);
+            c.igTextLinkOpenURL("Source Code", "TODO");
             c.igSeparator();
             c.igText("This program is intended to help people explore and visualise Device Tree Blob files.");
             c.igText("Created by Ivan Velickovic in 2025.");
@@ -594,12 +658,20 @@ pub fn main() !void {
         }
 
         c.igSetNextWindowPos(c.ImVec2 { .x = 0, .y = 20 }, 0, .{});
-        _ = c.igBegin("DTB", null, c.ImGuiWindowFlags_NoCollapse | c.ImGuiWindowFlags_NoResize);
-        c.igSetWindowSize_Vec2(c.ImVec2 { .x = 1920 / 2, .y = 1080 - 20 }, 0);
+        _ = c.igBegin("DTBs", null, c.ImGuiWindowFlags_NoCollapse | c.ImGuiWindowFlags_NoResize);
+        c.igSetWindowSize_Vec2(c.ImVec2 { .x = 250, .y = 1080 - 20 }, 0);
+        for (open_platforms.items) |p| {
+            c.igText(p.path);
+        }
+        c.igEnd();
+
+        c.igSetNextWindowPos(c.ImVec2 { .x = 250, .y = 20 }, 0, .{});
+        _ = c.igBegin("Tree", null, c.ImGuiWindowFlags_NoCollapse | c.ImGuiWindowFlags_NoResize);
+        c.igSetWindowSize_Vec2(c.ImVec2 { .x = (1920 / 2) - 250, .y = 1080 - 20 }, 0);
 
         // TODO: this logic is definetely wrong
         const expand_all = c.igButton("Expand All", .{});
-        c.igSameLine(0, 0);
+        c.igSameLine(0, -1.0);
         const collapse_all = c.igButton("Collapse All", .{});
         if (!nodes_expand_all) {
             nodes_expand_all = expand_all;
@@ -624,7 +696,7 @@ pub fn main() !void {
             if (node.prop(.Compatible)) |compatible| {
                 if (linux_compatible_map.get(compatible[0])) |driver| {
                     c.igText("Linux driver:");
-                    c.igSameLine(0, 0);
+                    c.igSameLine(0, -1.0);
                     const id = fmt(allocator, "{s}##linux", .{ driver });
                     defer allocator.free(id);
                     const url = fmt(allocator, "{s}/{s}", .{ LINUX_GITHUB, driver });
@@ -633,7 +705,7 @@ pub fn main() !void {
                 }
                 if (uboot_compatible_map.get(compatible[0])) |driver| {
                     c.igText("U-Boot driver:");
-                    c.igSameLine(0, 0);
+                    c.igSameLine(0, -1.0);
                     const id = fmt(allocator, "{s}##uboot", .{ driver });
                     defer allocator.free(id);
                     const url = fmt(allocator, "{s}/{s}", .{ UBOOT_GITHUB, driver });
