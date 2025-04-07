@@ -31,3 +31,6 @@
 * [ ] collpase seems to have a bug where collapse all only collapses nodes that have
       not been explictily opened by the user
 * [ ] proper logo
+* [ ] click on addresses or interrupts to copy them to clipboard
+* [ ] memory view, e.g let's say i just have an address and need to find the
+      coressponding device

@@ -115,6 +115,7 @@ const Platform = struct {
     path: []const u8,
     root: *dtb.Node,
     model: ?[]const u8,
+    regions: std.ArrayList(Platform.Region),
     main_memory: ?MainMemory,
     irqs: std.ArrayList(Irq),
     model_str: [:0]const u8,
@@ -130,15 +131,21 @@ const Platform = struct {
     //     type: Type
     // };
 
-    pub const MainMemory = struct {
-        regions: ArrayList(Region),
-        size: u64,
-        fmt: [:0]const u8,
-    };
-
     pub const Region = struct {
         addr: u64,
         size: u64,
+        node: *dtb.Node,
+    };
+
+    pub const MainMemory = struct {
+        regions: ArrayList(MainMemory.Region),
+        size: u64,
+        fmt: [:0]const u8,
+
+        pub const Region = struct {
+            addr: u64,
+            size: u64,
+        };
     };
 
     pub fn init(allocator: Allocator, path: []const u8) !Platform {
@@ -152,9 +159,9 @@ const Platform = struct {
         if (memory_node != null and memory_node.?.prop(.Reg) != null) {
             const regions = memory_node.?.prop(.Reg).?;
             var main_memory_size: u64 = 0;
-            var memory_regions = ArrayList(Region).initCapacity(allocator, regions.len) catch @panic("OOM");
+            var memory_regions = ArrayList(MainMemory.Region).initCapacity(allocator, regions.len) catch @panic("OOM");
             for (regions) |reg| {
-                const region: Region = .{
+                const region: MainMemory.Region = .{
                     .addr = @intCast(reg[0]),
                     .size = @intCast(reg[1]),
                 };
@@ -177,6 +184,9 @@ const Platform = struct {
             model_str = "N/A";
         }
 
+        var regions = std.ArrayList(Region).init(allocator);
+        try regionsAdd(root, &regions);
+
         return .{
             .allocator = allocator,
             .dtb_bytes = dtb_bytes,
@@ -185,6 +195,7 @@ const Platform = struct {
             .model = root.prop(.Model),
             .main_memory = main_memory,
             .irqs = try irqList(allocator, root),
+            .regions = regions,
             .model_str = model_str,
             .path_str = fmt(allocator, "File: '{s}'", .{ path }),
         };
@@ -196,6 +207,7 @@ const Platform = struct {
             m.regions.deinit();
         }
         platform.irqs.deinit();
+        platform.regions.deinit();
         platform.root.deinit(platform.allocator);
         if (platform.model != null){
             platform.allocator.free(platform.model_str);
@@ -204,6 +216,22 @@ const Platform = struct {
         platform.allocator.free(platform.dtb_bytes);
     }
 };
+
+fn regionsAdd(node: *dtb.Node, regions: *std.ArrayList(Platform.Region)) !void {
+    for (node.children) |child| {
+        try regionsAdd(child, regions);
+    }
+
+    if (node.prop(.Reg)) |reg| {
+        for (reg) |r| {
+            try regions.append(.{
+                .addr = @intCast(r[0]),
+                .size = @intCast(r[1]),
+                .node = node,
+            });
+        }
+    }
+}
 
 fn nodeNamesFmt(node: *dtb.Node, writer: std.ArrayList(u8).Writer) !void {
     if (node.parent) |parent| {
@@ -357,6 +385,11 @@ fn compatibleMap(allocator: Allocator, bytes: []const u8) !std.StringHashMap([]c
     return map;
 }
 
+// TODO: clean up
+fn stringLessThan(_: void, lhs: []const u8, rhs: []const u8) bool {
+    return std.mem.order(u8, lhs, rhs) == .lt;
+}
+
 fn exampleDtbs(allocator: Allocator, dir_path: []const u8) !std.ArrayList([:0]const u8) {
     var example_dtbs = std.ArrayList([:0]const u8).init(allocator);
     var dir = try std.fs.cwd().openDir(dir_path, .{ .iterate = true });
@@ -374,7 +407,14 @@ fn exampleDtbs(allocator: Allocator, dir_path: []const u8) !std.ArrayList([:0]co
         }
     }
 
+    std.mem.sort([:0]const u8, example_dtbs.items, {}, stringLessThan);
+
     return example_dtbs;
+}
+
+fn memoryInputTextCallback(_: ?*c.ImGuiInputTextCallbackData) callconv(.C) c_int {
+    std.debug.print("got input\n", .{ });
+    return 0;
 }
 
 pub fn main() !void {
@@ -488,6 +528,7 @@ pub fn main() !void {
         c.igNewFrame();
 
         var open_about = false;
+        var exit = false;
         if (c.igBeginMainMenuBar()) {
             if (c.igBeginMenu("File", true)) {
                 if (c.igBeginMenu("Example DTBs", true)) {
@@ -509,6 +550,9 @@ pub fn main() !void {
                     }
                     c.igEndMenu();
                 }
+                if (c.igMenuItem_Bool("Exit", null, false, true)) {
+                    exit = true;
+                }
                 c.igEndMenu();
             }
             if (c.igBeginMenu("Help", true)) {
@@ -528,6 +572,10 @@ pub fn main() !void {
                 highlighted_node = null;
                 nodes_expand_all = false;
             }
+        }
+
+        if (exit) {
+            std.process.exit(0);
         }
 
         if (open_about) {
@@ -645,6 +693,16 @@ pub fn main() !void {
                     const irq_fmt = fmt(allocator, "{d} (0x{x}), {s}", .{ irq.number, irq.number, irq.node.name });
                     defer allocator.free(irq_fmt);
                     c.igText(irq_fmt);
+                }
+                c.igEndTabItem();
+            }
+            if (c.igBeginTabItem("Memory", null, c.ImGuiTabItemFlags_None)) {
+                var buf = [_:0]u8{0} ** 100;
+                _ = c.igInputTextWithHint("input text", "e.g 0x30400000", &buf, buf.len, 0, memoryInputTextCallback, null);
+                for (platform.regions.items) |reg| {
+                    const reg_fmt = fmt(allocator, "[0x{x:0>12}..0x{x:0>12}], {s}", .{ reg.addr, reg.addr + reg.size, reg.node.name });
+                    defer allocator.free(reg_fmt);
+                    c.igText(reg_fmt);
                 }
                 c.igEndTabItem();
             }
