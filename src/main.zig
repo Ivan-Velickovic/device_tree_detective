@@ -24,7 +24,7 @@ const State = struct {
 
     /// Window position in pixels given a proportion of the view from 0 to 100.
     pub fn windowPos(s: *State, xp: f32, yp: f32) c.ImVec2 {
-        std.debug.assert(xp <= 100 and yp <= 100 and xp >= 0 and yp >= 0);
+        std.debug.assert(xp <= 1 and yp <= 1 and xp >= 0 and yp >= 0);
 
         const menu_size = 20;
 
@@ -39,7 +39,7 @@ const State = struct {
 
     /// Window size in pixels given a proportion of the view from 0 to 100.
     pub fn windowSize(s: *State, width: f32, height: f32) c.ImVec2 {
-        std.debug.assert(width <= 100 and height <= 100);
+        std.debug.assert(width <= 1 and height <= 1 and width >= 0 and height >= 0);
 
         const menu_size = 20;
 
@@ -703,6 +703,7 @@ pub fn main() !void {
         }
 
         var p_open = true;
+        c.igSetNextWindowPos(state.windowPos(0.5, 0.5), 0, .{ .x = 0.5, .y = 0.5 });
         if (c.igBeginPopupModal("About", &p_open, c.ImGuiWindowFlags_AlwaysAutoResize | c.ImGuiWindowFlags_NoResize | c.ImGuiWindowFlags_NoMove)) {
             c.igText(ABOUT);
             c.igTextLinkOpenURL("Home page", "TODO");
