@@ -3,10 +3,61 @@ const builtin = @import("builtin");
 const dtb = @import("dtb.zig");
 const Allocator = std.mem.Allocator;
 const ArrayList = std.ArrayList;
+const log = std.log;
 
 // TODO: get this from build.zig.zon instead
 const VERSION = "0.1.0";
 const ABOUT = std.fmt.comptimePrint("DTB viewer v{s}", .{ VERSION });
+
+const State = struct {
+    allocator: Allocator,
+    platforms: std.ArrayList(Platform),
+    window_width: u32 = 1920,
+    window_height: u32 = 1080,
+
+    pub fn create(allocator: Allocator) State {
+        return .{
+            .allocator = allocator,
+            .platforms = std.ArrayList(Platform).init(allocator),
+        };
+    }
+
+    /// Window position in pixels given a proportion of the view from 0 to 100.
+    pub fn windowPos(s: *State, xp: f32, yp: f32) c.ImVec2 {
+        std.debug.assert(xp <= 100 and yp <= 100 and xp >= 0 and yp >= 0);
+
+        const menu_size = 20;
+
+        const y = (@as(f32, @floatFromInt(s.window_height)) * yp) + menu_size;
+        const x = (@as(f32, @floatFromInt(s.window_width)) * xp);
+
+        return .{
+            .x = @round(x),
+            .y = @round(y),
+        };
+    }
+
+    /// Window size in pixels given a proportion of the view from 0 to 100.
+    pub fn windowSize(s: *State, width: f32, height: f32) c.ImVec2 {
+        std.debug.assert(width <= 100 and height <= 100);
+
+        const menu_size = 20;
+
+        return .{
+            .x = @as(f32, @floatFromInt(s.window_width)) * width,
+            .y = (@as(f32, @floatFromInt(s.window_height)) * height) - menu_size,
+        };
+    }
+
+    pub fn deinit(s: *State) void {
+        for (s.platforms.items) |*p| {
+            p.deinit();
+        }
+        s.platforms.deinit();
+    }
+};
+
+var state: State = undefined;
 
 const c = @cImport({
     @cDefine("CIMGUI_DEFINE_ENUMS_AND_STRUCTS", {});
@@ -24,7 +75,10 @@ const c = @cImport({
 
 fn dropCallback(_: ?*c.GLFWwindow, count: c_int, paths: [*c][*c]const u8) callconv(.C) void {
     for (0..@intCast(count)) |i| {
-        std.debug.print("{s}\n", .{ paths[i] });
+        log.debug("adding dropped '{s}'\n", .{ paths[i] });
+        // TODO: check the file is actually an FDT
+        const platform = Platform.init(state.allocator, std.mem.span(paths[i])) catch @panic("TODO");
+        state.platforms.append(platform) catch @panic("TODO");
     }
 }
 
@@ -421,7 +475,8 @@ fn memoryInputTextCallback(_: ?*c.ImGuiInputTextCallbackData) callconv(.C) c_int
 const usage_text =
     \\usage: dtb_viewer [-h|--help] [DTB PATHS ...]
     \\
-    \\ TODO
+    \\Open DTB viewer via the command line.
+    \\Pass list of paths to DTBs to open first.
     \\
 ;
 
@@ -470,14 +525,6 @@ pub fn main() !void {
     const args = try Args.parse(allocator, process_args);
     defer args.deinit();
 
-    var open_platforms = std.ArrayList(Platform).init(allocator);
-    defer {
-        for (open_platforms.items) |*p| {
-            p.deinit();
-        }
-        open_platforms.deinit();
-    }
-
     // Do not need to deinit since it will be done when we deinit the whole
     // list of platforms.
     var init_platform: Platform = undefined;
@@ -487,9 +534,12 @@ pub fn main() !void {
         init_platform = try Platform.init(allocator, "dtbs/sel4/qemu_virt_aarch64.dtb");
     }
 
-    try open_platforms.append(init_platform);
+    state = State.create(allocator);
+    defer state.deinit();
 
-    var platform = &open_platforms.getLast();
+    try state.platforms.append(init_platform);
+
+    var platform = &state.platforms.getLast();
 
     var dts = try decompileDtb(allocator, init_platform.path);
     defer dts.deinit(allocator);
@@ -546,6 +596,9 @@ pub fn main() !void {
     }
     defer c.glfwDestroyWindow(window);
 
+    var window_width: c_int = undefined;
+    var window_height: c_int = undefined;
+
     c.glfwMakeContextCurrent(window);
     c.glfwSwapInterval(1);
 
@@ -590,6 +643,10 @@ pub fn main() !void {
         c.ImGui_ImplGlfw_NewFrame();
         c.igNewFrame();
 
+        c.glfwGetWindowSize(window, &window_width, &window_height);
+        state.window_width = @intCast(window_width);
+        state.window_height = @intCast(window_height);
+
         var open_about = false;
         var exit = false;
         if (c.igBeginMainMenuBar()) {
@@ -632,8 +689,8 @@ pub fn main() !void {
                 highlighted_node = null;
                 nodes_expand_all = false;
                 // TODO: check if it platform already exists first
-                try open_platforms.append(try Platform.init(allocator, d));
-                platform = &open_platforms.getLast();
+                try state.platforms.append(try Platform.init(allocator, d));
+                platform = &state.platforms.getLast();
             }
         }
 
@@ -646,28 +703,30 @@ pub fn main() !void {
         }
 
         var p_open = true;
-        if (c.igBeginPopupModal("About", &p_open, c.ImGuiWindowFlags_AlwaysAutoResize)) {
+        if (c.igBeginPopupModal("About", &p_open, c.ImGuiWindowFlags_AlwaysAutoResize | c.ImGuiWindowFlags_NoResize | c.ImGuiWindowFlags_NoMove)) {
             c.igText(ABOUT);
             c.igTextLinkOpenURL("Home page", "TODO");
             c.igSameLine(0, -1.0);
             c.igTextLinkOpenURL("Source Code", "TODO");
+            c.igSameLine(0, -1.0);
+            c.igTextLinkOpenURL("Report issue", "TODO");
             c.igSeparator();
             c.igText("This program is intended to help people explore and visualise Device Tree Blob files.");
             c.igText("Created by Ivan Velickovic in 2025.");
             c.igEndPopup();
         }
 
-        c.igSetNextWindowPos(c.ImVec2 { .x = 0, .y = 20 }, 0, .{});
+        c.igSetNextWindowPos(state.windowPos(0, 0), 0, .{});
         _ = c.igBegin("DTBs", null, c.ImGuiWindowFlags_NoCollapse | c.ImGuiWindowFlags_NoResize);
-        c.igSetWindowSize_Vec2(c.ImVec2 { .x = 250, .y = 1080 - 20 }, 0);
-        for (open_platforms.items) |p| {
+        c.igSetWindowSize_Vec2(state.windowSize(0.15, 1.0), 0);
+        for (state.platforms.items) |p| {
             c.igText(p.path);
         }
         c.igEnd();
 
-        c.igSetNextWindowPos(c.ImVec2 { .x = 250, .y = 20 }, 0, .{});
+        c.igSetNextWindowPos(state.windowPos(0.15, 0), 0, .{});
         _ = c.igBegin("Tree", null, c.ImGuiWindowFlags_NoCollapse | c.ImGuiWindowFlags_NoResize);
-        c.igSetWindowSize_Vec2(c.ImVec2 { .x = (1920 / 2) - 250, .y = 1080 - 20 }, 0);
+        c.igSetWindowSize_Vec2(state.windowSize(0.35, 1.0), 0);
 
         // TODO: this logic is definetely wrong
         const expand_all = c.igButton("Expand All", .{});
@@ -683,9 +742,10 @@ pub fn main() !void {
         c.igEnd();
 
         // === Selected Node Window ===
-        c.igSetNextWindowPos(c.ImVec2 { .x = 1920 / 2, .y = 20 }, 0, .{});
+        c.igSetNextWindowPos(state.windowPos(0.5, 0), 0, .{});
+
         _ = c.igBegin("Selected Node", null, c.ImGuiWindowFlags_NoCollapse | c.ImGuiWindowFlags_NoResize);
-        c.igSetWindowSize_Vec2(c.ImVec2 { .x = 1920 / 2, .y = (1080 / 2) - 20 }, 0);
+        c.igSetWindowSize_Vec2(state.windowSize(0.5, 0.5), 0);
         if (highlighted_node) |node| {
             var node_name = std.ArrayList(u8).init(allocator);
             defer node_name.deinit();
@@ -723,9 +783,9 @@ pub fn main() !void {
         // ===========================
 
         // === Details Window ===
-        c.igSetNextWindowPos(c.ImVec2 { .x = 1920 / 2, .y = 1080 / 2 }, 0, .{});
+        c.igSetNextWindowPos(state.windowPos(0.5, 0.5), 0, .{});
         _ = c.igBegin("Details", null, c.ImGuiWindowFlags_NoCollapse | c.ImGuiWindowFlags_NoResize);
-        c.igSetWindowSize_Vec2(c.ImVec2 { .x = 1920 / 2, .y = 1080 / 2 }, 0);
+        c.igSetWindowSize_Vec2(state.windowSize(0.5, 0.5), 0);
         if (c.igBeginTabBar("info", c.ImGuiTabBarFlags_None)) {
             if (c.igBeginTabItem("Platform", null, c.ImGuiTabItemFlags_None)) {
                 c.igText(platform.path_str);
