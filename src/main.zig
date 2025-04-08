@@ -166,7 +166,8 @@ const State = struct {
     pub fn windowPos(s: *State, xp: f32, yp: f32) c.ImVec2 {
         std.debug.assert(xp <= 1 and yp <= 1 and xp >= 0 and yp >= 0);
 
-        const menu_size = 20;
+        // TODO: this gets hacky, not sure how to do it properly
+        const menu_size = c.igGetTextLineHeightWithSpacing() + 1;
 
         const y = (@as(f32, @floatFromInt(s.window_height)) * yp);
         const x = (@as(f32, @floatFromInt(s.window_width)) * xp);
@@ -181,11 +182,12 @@ const State = struct {
     pub fn windowSize(s: *State, width: f32, height: f32) c.ImVec2 {
         std.debug.assert(width <= 1 and height <= 1 and width >= 0 and height >= 0);
 
-        const menu_size = 20;
+        // TODO: this gets hacky, not sure how to do it properly
+        const menu_size = c.igGetTextLineHeightWithSpacing() + 1;
 
         return .{
             .x = @as(f32, @floatFromInt(s.window_width)) * width,
-            .y = (@as(f32, @floatFromInt(s.window_height - menu_size)) * height),
+            .y = (@as(f32, @floatFromInt(s.window_height)) - menu_size) * height,
         };
     }
 
@@ -772,10 +774,9 @@ pub fn main() !void {
     const font_cfg = c.ImFontConfig_ImFontConfig();
     // Stop ImGui from freeing our font memory.
     font_cfg.*.FontDataOwnedByAtlas = false;
-    _ = c.ImFontAtlas_AddFontFromMemoryTTF(imio.*.Fonts, @constCast(@ptrCast(font.ptr)), @intCast(font.len), 13, font_cfg, null);
+    _ = c.ImFontAtlas_AddFontFromMemoryTTF(imio.*.Fonts, @constCast(@ptrCast(font.ptr)), @intCast(font.len), 18, font_cfg, null);
 
     c.igStyleColorsLight(null);
-    c.ImGuiStyle_ScaleAllSizes(c.igGetStyle(), 1.5);
 
     _ = c.ImGui_ImplGlfw_InitForOpenGL(window, true);
     defer c.ImGui_ImplGlfw_Shutdown();
@@ -786,6 +787,7 @@ pub fn main() !void {
     // ===== Styling Begin =======
     const style = c.igGetStyle();
     style.*.TabRounding = 0;
+    c.ImGuiStyle_ScaleAllSizes(style, 2.0);
 
     setColour(.child_bg, .{ .x = 0.6, .y = 0.6, .z = 0.6, .w = 1 });
     setColour(.popup_bg, .{ .x = 0.8, .y = 0.8, .z = 0.8, .w = 1 });
@@ -809,9 +811,7 @@ pub fn main() !void {
     while (c.glfwWindowShouldClose(window) != c.GLFW_TRUE) {
         c.glfwPollEvents();
 
-        const maybe_platform = state.getPlatform();
-
-        if (maybe_platform) |platform| {
+        if (state.getPlatform()) |platform| {
             const window_title = fmt(allocator, "{s} - DTB viewer", .{ platform.path });
             defer allocator.free(window_title);
             c.glfwSetWindowTitle(window, window_title);
@@ -884,12 +884,8 @@ pub fn main() !void {
 
         // We have a DTB to load, but it might already be the current one.
         if (dtb_to_load) |d| {
-            if (maybe_platform) |platform| {
-                if (!std.mem.eql(u8, platform.path, d)) {
-                    highlighted_node = null;
-                    nodes_expand_all = false;
-                }
-            }
+            highlighted_node = null;
+            nodes_expand_all = false;
             try state.loadPlatform(d);
             state.setPlatform(d);
         }
@@ -917,7 +913,7 @@ pub fn main() !void {
             c.igEndPopup();
         }
 
-        if (maybe_platform) |platform| {
+        if (state.getPlatform()) |platform| {
             c.igSetNextWindowPos(state.windowPos(0, 0), 0, .{});
             _ = c.igBegin("DTBs", null, c.ImGuiWindowFlags_NoCollapse | c.ImGuiWindowFlags_NoResize);
             c.igSetWindowSize_Vec2(state.windowSize(0.15, 1.0), 0);
