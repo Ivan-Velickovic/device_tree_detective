@@ -3,6 +3,7 @@
 * [x] macOS support
 * [x] U-Boot driver for a specific device
 * [x] Linux driver for a specific device
+* [x] heaps of styling to do
 * [x] Help menu (point to GitHub as well)
     * [ ] import Linux at runtime and have it search that directroy for the list?
         * I would need to recursively iterate through every file, read all the contents
@@ -15,7 +16,6 @@
 * [ ] multiple DTBs open at the same time via tabs
 * [ ] IRQ info based on GIC etc
 * [ ] opening files
-* [ ] heaps of styling to do
 * [ ] In platform info show what RISC-V extensions a CPU supports in a nice way
 * [ ] list lists of strings as a drop-down in the 'selected node' view
 * [ ] dtb properites to parse

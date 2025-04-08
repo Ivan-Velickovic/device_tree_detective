@@ -5,6 +5,8 @@ const Allocator = std.mem.Allocator;
 const ArrayList = std.ArrayList;
 const log = std.log;
 
+const objc = if (builtin.os.tag == .macos) @import("objc") else null;
+
 const c = @cImport({
     @cDefine("CIMGUI_DEFINE_ENUMS_AND_STRUCTS", {});
     @cDefine("CIMGUI_USE_OPENGL3", {});
@@ -249,7 +251,6 @@ const Platform = struct {
     main_memory: ?MainMemory,
     irqs: std.ArrayList(Irq),
     model_str: [:0]const u8,
-    path_str: [:0]const u8,
     // cpus: ?ArrayList(Cpu),
 
     // pub const Cpu = struct {
@@ -327,7 +328,6 @@ const Platform = struct {
             .irqs = try irqList(allocator, root),
             .regions = regions,
             .model_str = model_str,
-            .path_str = fmt(allocator, "File: '{s}'", .{ path }),
         };
     }
 
@@ -343,7 +343,6 @@ const Platform = struct {
         if (platform.model != null){
             platform.allocator.free(platform.model_str);
         }
-        platform.allocator.free(platform.path_str);
         platform.allocator.free(platform.dtb_bytes);
     }
 };
@@ -679,10 +678,37 @@ pub fn main() !void {
     c.glfwSwapInterval(1);
 
     // Load window icon
-    var icons = std.mem.zeroes([1]c.GLFWimage);
-    icons[0].pixels = c.stbi_load_from_memory(@constCast(@ptrCast(logo.ptr)), logo.len, &icons[0].width, &icons[0].height, 0, 4);
-    c.glfwSetWindowIcon(window, 1, &icons);
-    c.stbi_image_free(icons[0].pixels);
+    if (builtin.os.tag == .macos) {
+        // This GLFW API is not valid on macOS, we have to go through Objective-C
+        // and the macOS API instead.
+        const NSApplication = objc.getClass("NSApplication").?;
+        const application = NSApplication.msgSend(objc.Object, "sharedApplication", .{});
+
+        // TODO: need to call dealloc on things
+        // We need to create an NSImage and then assign it to NSApplication.applicationIconImage
+
+        const NSString = objc.getClass("NSString").?;
+
+        const c_string: [:0]const u8 = "assets/icons/test-logo.png";
+        const ns_string = NSString.msgSend(objc.Object, "stringWithUTF8String:", .{
+            c_string,
+        });
+
+        const NSImage = objc.getClass("NSImage").?;
+        const ns_image = NSImage.msgSend(objc.Object, "alloc", .{});
+        std.debug.assert(ns_image.value != null);
+        ns_image.msgSend(void, "initByReferencingFile:", .{
+            ns_string,
+        });
+        std.debug.print("here2\n", .{});
+
+        application.setProperty("applicationIconImage", ns_image);
+    } else {
+        var icons = std.mem.zeroes([1]c.GLFWimage);
+        icons[0].pixels = c.stbi_load_from_memory(@constCast(@ptrCast(logo.ptr)), logo.len, &icons[0].width, &icons[0].height, 0, 4);
+        c.glfwSetWindowIcon(window, 1, &icons);
+        c.stbi_image_free(icons[0].pixels);
+    }
 
     _ = c.glfwSetDropCallback(window, dropCallback);
 
@@ -722,13 +748,14 @@ pub fn main() !void {
     setColour(.window_bg, .{ .x = 0.751, .y = 0.751, .z = 0.751, .w = 1 });
     setColour(.text, .{ .x = 0, .y = 0, .z = 0, .w = 1 });
     setColour(.title_bg, .{ .x = 0.6, .y = 0.6, .z = 0.6, .w = 1 });
+    setColour(.title_bg_active, .{ .x = 0.6, .y = 0.6, .z = 0.6, .w = 1 });
     setColour(.menu_bar_bg, .{ .x = 1, .y = 1, .z = 1, .w = 1 });
     setColour(.button, .{ .x = 0.729, .y = 0.506, .z = 0.125, .w = 1 });
     setColour(.button_hovered, .{ .x = 0.812, .y = 0.549, .z = 0.098, .w = 1 });
     setColour(.tab, .{ .x = 0.651, .y = 0.451, .z = 0.110, .w = 1 });
     setColour(.tab_selected, .{ .x = 0.788, .y = 0.541, .z = 0.110, .w = 1 });
     setColour(.tab_hovered, .{ .x = 0.812, .y = 0.549, .z = 0.098, .w = 1 });
-    setColour(.title_bg_active, .{ .x = 0.788, .y = 0.541, .z = 0.110, .w = 1 });
+    setColour(.header_hovered, .{ .x = 0.788, .y = 0.541, .z = 0.110, .w = 1 });
     // ===== Styling End =======
 
     // TODO: move this into platform struct
@@ -737,6 +764,9 @@ pub fn main() !void {
     var nodes_expand_all = false;
     while (c.glfwWindowShouldClose(window) != c.GLFW_TRUE) {
         c.glfwPollEvents();
+        const window_title = fmt(allocator, "{s} - DTB viewer", .{ platform.path });
+        defer allocator.free(window_title);
+        c.glfwSetWindowTitle(window, window_title);
 
         c.ImGui_ImplOpenGL3_NewFrame();
         c.ImGui_ImplGlfw_NewFrame();
@@ -903,7 +933,6 @@ pub fn main() !void {
         c.igSetWindowSize_Vec2(state.windowSize(0.5, 0.5), 0);
         if (c.igBeginTabBar("info", c.ImGuiTabBarFlags_None)) {
             if (c.igBeginTabItem("Platform", null, c.ImGuiTabItemFlags_None)) {
-                c.igText(platform.path_str);
                 c.igText(platform.model_str);
                 if (platform.main_memory) |main_memory| {
                     if (c.igTreeNodeEx_Str(main_memory.fmt, c.ImGuiTreeNodeFlags_DefaultOpen)) {

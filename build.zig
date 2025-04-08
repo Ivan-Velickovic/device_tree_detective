@@ -12,6 +12,11 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    const maybe_objc_dep = b.lazyDependency("objc", .{
+        .target = target,
+        .optimize = optimize,
+    });
+
     const exe_mod = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
         .target = target,
@@ -36,6 +41,9 @@ pub fn build(b: *std.Build) void {
     switch (target.result.os.tag) {
         .macos => {
             exe.linkFramework("OpenGL");
+            if (maybe_objc_dep) |objc_dep| {
+                exe.root_module.addImport("objc", objc_dep.module("objc"));
+            }
         },
         .linux => {
             exe.linkSystemLibrary("GL");
