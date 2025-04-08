@@ -34,6 +34,7 @@
 * [ ] click on addresses or interrupts to copy them to clipboard
 * [ ] memory view, e.g let's say i just have an address and need to find the
       coressponding device
+* [ ] check compatible map, arm,cortex-a55 was coming with imx uboot cpu driver
 
 
 ```

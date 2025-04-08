@@ -25,6 +25,14 @@ pub fn build(b: *std.Build) void {
     exe.addIncludePath(b.path("include"));
     exe.root_module.addImport("dtb", dtb_mod);
 
+    const assets = .{
+        "assets/fonts/inter/Inter-Medium.ttf",
+        "assets/icons/test-logo.png",
+    };
+    inline for (assets) |asset| {
+        exe.root_module.addAnonymousImport(asset, .{ .root_source_file = b.path(asset) });
+    }
+
     switch (target.result.os.tag) {
         .macos => {
             exe.linkFramework("OpenGL");

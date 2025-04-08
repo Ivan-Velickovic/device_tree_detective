@@ -5,13 +5,103 @@ const Allocator = std.mem.Allocator;
 const ArrayList = std.ArrayList;
 const log = std.log;
 
+const c = @cImport({
+    @cDefine("CIMGUI_DEFINE_ENUMS_AND_STRUCTS", {});
+    @cDefine("CIMGUI_USE_OPENGL3", {});
+    @cDefine("CIMGUI_USE_GLFW", {});
+    // @cDefine("GLFW_INCLUDE_NONE", "1");
+    @cInclude("cimgui.h");
+    @cInclude("cimgui_impl.h");
+    @cInclude("GLFW/glfw3.h");
+    @cDefine("STBI_ONLY_PNG", "");
+    @cDefine("STB_IMAGE_IMPLEMENTATION", "");
+    @cDefine("STBI_NO_STDIO", "");
+    @cInclude("stb_image.h");
+});
+
 // TODO: get this from build.zig.zon instead
 const VERSION = "0.1.0";
 const ABOUT = std.fmt.comptimePrint("DTB viewer v{s}", .{ VERSION });
 
+const font: [:0]const u8 = @embedFile("assets/fonts/inter/Inter-Medium.ttf");
+const logo: [:0]const u8 = @embedFile("assets/icons/test-logo.png");
+
+/// Note that this must match to cimgui.h definition of ImGuiCol_.
+/// I could have just used the C bindings but for convenience I made the
+/// colours into a Zig enum.
+const Colour = enum(usize) {
+    text,
+    text_disabled,
+    window_bg,
+    child_bg,
+    popup_bg,
+    border,
+    border_shadow,
+    frame_bg,
+    frame_bg_hovered,
+    frame_bg_active,
+    title_bg,
+    title_bg_active,
+    title_bg_collapsed,
+    menu_bar_bg,
+    scrollbar_bg,
+    scrollbar_grab,
+    scrollbar_grab_hovered,
+    scrollbar_grab_active,
+    check_mark,
+    slider_grab,
+    slider_grab_active,
+    button,
+    button_hovered,
+    button_active,
+    header,
+    header_hovered,
+    header_active,
+    separator,
+    separator_hovered,
+    separator_active,
+    resize_grip,
+    resize_grip_hovered,
+    resize_grip_active,
+    tab_hovered,
+    tab,
+    tab_selected,
+    tab_selected_overline,
+    tab_dimmed,
+    tab_dimmed_selected,
+    tab_dimmed_selected_overline,
+    docking_preview,
+    docking_empty_bg,
+    plot_lines,
+    plot_lines_hovered,
+    plot_histogram,
+    plot_histogram_hovered,
+    table_header_bg,
+    table_border_strong,
+    table_border_light,
+    table_row_bg,
+    table_row_bg_alt,
+    text_link,
+    text_selected_bg,
+    drag_drop_target,
+    nav_cursor,
+    nav_windowing_highlight,
+    nav_windowing_dim_bg,
+    modal_window_dim_bg,
+};
+
+comptime {
+    std.debug.assert(@typeInfo(Colour).@"enum".fields.len == c.ImGuiCol_COUNT);
+}
+
+fn setColour(colour: Colour, value: c.ImVec4) void {
+    c.igGetStyle().*.Colors[@intFromEnum(colour)] = value;
+}
+
 const State = struct {
     allocator: Allocator,
     platforms: std.ArrayList(Platform),
+    // TODO: use defaults based on the monitor size
     window_width: u32 = 1920,
     window_height: u32 = 1080,
 
@@ -28,12 +118,12 @@ const State = struct {
 
         const menu_size = 20;
 
-        const y = (@as(f32, @floatFromInt(s.window_height)) * yp) + menu_size;
+        const y = (@as(f32, @floatFromInt(s.window_height)) * yp);
         const x = (@as(f32, @floatFromInt(s.window_width)) * xp);
 
         return .{
             .x = @round(x),
-            .y = @round(y),
+            .y = @round(y) + menu_size,
         };
     }
 
@@ -45,7 +135,7 @@ const State = struct {
 
         return .{
             .x = @as(f32, @floatFromInt(s.window_width)) * width,
-            .y = (@as(f32, @floatFromInt(s.window_height)) * height) - menu_size,
+            .y = (@as(f32, @floatFromInt(s.window_height - menu_size)) * height),
         };
     }
 
@@ -58,20 +148,6 @@ const State = struct {
 };
 
 var state: State = undefined;
-
-const c = @cImport({
-    @cDefine("CIMGUI_DEFINE_ENUMS_AND_STRUCTS", {});
-    @cDefine("CIMGUI_USE_OPENGL3", {});
-    @cDefine("CIMGUI_USE_GLFW", {});
-    // @cDefine("GLFW_INCLUDE_NONE", "1");
-    @cInclude("cimgui.h");
-    @cInclude("cimgui_impl.h");
-    @cInclude("GLFW/glfw3.h");
-    @cDefine("STBI_ONLY_PNG", "");
-    @cDefine("STB_IMAGE_IMPLEMENTATION", "");
-    // @cDefine("STBI_NO_STDIO", "");
-    @cInclude("stb_image.h");
-});
 
 fn dropCallback(_: ?*c.GLFWwindow, count: c_int, paths: [*c][*c]const u8) callconv(.C) void {
     for (0..@intCast(count)) |i| {
@@ -604,7 +680,7 @@ pub fn main() !void {
 
     // Load window icon
     var icons = std.mem.zeroes([1]c.GLFWimage);
-    icons[0].pixels = c.stbi_load("test-logo.png", &icons[0].width, &icons[0].height, 0, 4);
+    icons[0].pixels = c.stbi_load_from_memory(@constCast(@ptrCast(logo.ptr)), logo.len, &icons[0].width, &icons[0].height, 0, 4);
     c.glfwSetWindowIcon(window, 1, &icons);
     c.stbi_image_free(icons[0].pixels);
 
@@ -623,7 +699,12 @@ pub fn main() !void {
     const imio = c.igGetIO_Nil();
     imio.*.ConfigFlags = c.ImGuiConfigFlags_NavEnableKeyboard;
 
-    c.igStyleColorsDark(null);
+    const font_cfg = c.ImFontConfig_ImFontConfig();
+    // Stop ImGui from freeing our font memory.
+    font_cfg.*.FontDataOwnedByAtlas = false;
+    _ = c.ImFontAtlas_AddFontFromMemoryTTF(imio.*.Fonts, @constCast(@ptrCast(font.ptr)), @intCast(font.len), 13, font_cfg, null);
+
+    c.igStyleColorsLight(null);
     c.ImGuiStyle_ScaleAllSizes(c.igGetStyle(), 1.5);
 
     _ = c.ImGui_ImplGlfw_InitForOpenGL(window, true);
@@ -631,6 +712,24 @@ pub fn main() !void {
 
     _ = c.ImGui_ImplOpenGL3_Init(GLSL_VERSION);
     defer c.ImGui_ImplOpenGL3_Shutdown();
+
+    // ===== Styling Begin =======
+    const style = c.igGetStyle();
+    style.*.TabRounding = 0;
+
+    setColour(.child_bg, .{ .x = 0.6, .y = 0.6, .z = 0.6, .w = 1 });
+    setColour(.popup_bg, .{ .x = 0.8, .y = 0.8, .z = 0.8, .w = 1 });
+    setColour(.window_bg, .{ .x = 0.751, .y = 0.751, .z = 0.751, .w = 1 });
+    setColour(.text, .{ .x = 0, .y = 0, .z = 0, .w = 1 });
+    setColour(.title_bg, .{ .x = 0.6, .y = 0.6, .z = 0.6, .w = 1 });
+    setColour(.menu_bar_bg, .{ .x = 1, .y = 1, .z = 1, .w = 1 });
+    setColour(.button, .{ .x = 0.729, .y = 0.506, .z = 0.125, .w = 1 });
+    setColour(.button_hovered, .{ .x = 0.812, .y = 0.549, .z = 0.098, .w = 1 });
+    setColour(.tab, .{ .x = 0.651, .y = 0.451, .z = 0.110, .w = 1 });
+    setColour(.tab_selected, .{ .x = 0.788, .y = 0.541, .z = 0.110, .w = 1 });
+    setColour(.tab_hovered, .{ .x = 0.812, .y = 0.549, .z = 0.098, .w = 1 });
+    setColour(.title_bg_active, .{ .x = 0.788, .y = 0.541, .z = 0.110, .w = 1 });
+    // ===== Styling End =======
 
     // TODO: move this into platform struct
     var highlighted_node: ?*dtb.Node = null;
@@ -669,6 +768,21 @@ pub fn main() !void {
                         c.igEndMenu();
                     }
                     c.igEndMenu();
+                }
+                if (builtin.mode == .Debug) {
+                    if (c.igBeginMenu("Colours", true)) {
+                        const sz = c.igGetTextLineHeight();
+                        for (0..c.ImGuiCol_COUNT) |i| {
+                            const name = c.igGetStyleColorName(@intCast(i));
+                            var p: c.ImVec2 = undefined;
+                            c.igGetCursorScreenPos(&p);
+                            c.ImDrawList_AddRectFilled(c.igGetWindowDrawList(), p, .{ .x = p.x + sz, .y = p.y + sz }, c.igGetColorU32_Col(@intCast(i), 1), 0, 0);
+                            c.igDummy(.{ .x = sz, .y = sz });
+                            c.igSameLine(0, -1.0);
+                            _ = c.igMenuItem_Bool(name, null, false, true);
+                        }
+                        c.igEndMenu();
+                    }
                 }
                 if (c.igMenuItem_Bool("Exit", null, false, true)) {
                     exit = true;
