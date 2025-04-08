@@ -1,13 +1,17 @@
-* [x] main memory
-* [x] in selected node, show full path to node rather than just the name
-* [x] macOS support
-* [x] U-Boot driver for a specific device
-* [x] Linux driver for a specific device
-* [x] heaps of styling to do
-* [x] Help menu (point to GitHub as well)
-    * [ ] import Linux at runtime and have it search that directroy for the list?
-        * I would need to recursively iterate through every file, read all the contents
-          and then match on the pattern
+## Main work
+
+* [ ] CPU info display
+* [ ] Opening files via file picker
+* [ ] Splash/welcome screen
+* [ ] Finish tree view
+* [ ] Better IRQ view
+* [ ] Better memory view, introduce memory map probably
+
+## Improvements and QoL
+
+* [ ] import Linux at runtime and have it search that directroy for the list?
+    * I would need to recursively iterate through every file, read all the contents
+      and then match on the pattern
 * [ ] compile DTS to DTB on demand
 * [ ] fuzzy search for nodes
 * [ ] cpu info
@@ -35,7 +39,8 @@
 * [ ] memory view, e.g let's say i just have an address and need to find the
       coressponding device
 * [ ] check compatible map, arm,cortex-a55 was coming with imx uboot cpu driver
-
+* [ ] window size/position seems messed up for selected node/details
+* [ ] some colours are still messed up
 
 ```
 : GLFW Error '65544'': Cocoa: Failed to query display mode

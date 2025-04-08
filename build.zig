@@ -18,7 +18,7 @@ pub fn build(b: *std.Build) void {
     });
 
     const exe = b.addExecutable(.{
-        .name = "dtb_viewer",
+        .name = "DTB viewer",
         .root_module = exe_mod,
     });
     exe.addIncludePath(b.path("include"));
@@ -26,7 +26,7 @@ pub fn build(b: *std.Build) void {
 
     const assets = .{
         "assets/fonts/inter/Inter-Medium.ttf",
-        "assets/icons/test-logo.png",
+        "assets/icons/macos.png",
     };
     inline for (assets) |asset| {
         exe.root_module.addAnonymousImport(asset, .{ .root_source_file = b.path(asset) });

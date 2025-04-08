@@ -26,7 +26,7 @@ const VERSION = "0.1.0";
 const ABOUT = std.fmt.comptimePrint("DTB viewer v{s}", .{ VERSION });
 
 const font: [:0]const u8 = @embedFile("assets/fonts/inter/Inter-Medium.ttf");
-const logo: [:0]const u8 = @embedFile("assets/icons/test-logo.png");
+const logo: [:0]const u8 = @embedFile("assets/icons/macos.png");
 
 /// Note that this must match to cimgui.h definition of ImGuiCol_.
 /// I could have just used the C bindings but for convenience I made the
@@ -102,7 +102,10 @@ fn setColour(colour: Colour, value: c.ImVec4) void {
 
 const State = struct {
     allocator: Allocator,
+    /// Loaded platforms for inspection
     platforms: std.ArrayList(Platform),
+    /// Current platform that we are inspecting
+    platform: ?usize = null,
     // TODO: use defaults based on the monitor size
     window_width: u32 = 1920,
     window_height: u32 = 1080,
@@ -112,6 +115,51 @@ const State = struct {
             .allocator = allocator,
             .platforms = std.ArrayList(Platform).init(allocator),
         };
+    }
+
+    pub fn setPlatform(s: *State, path: [:0]const u8) void {
+        for (s.platforms.items, 0..) |platform, i| {
+            if (std.mem.eql(u8, platform.path, path)) {
+                s.platform = i;
+                return;
+            }
+        }
+
+        log.err("could not set platform '{s}', does not exist", .{ path });
+        log.err("existing platforms:", .{});
+        for (s.platforms.items) |platform| {
+            log.err("   {s}", .{ platform.path });
+        }
+
+        // TODO
+        unreachable;
+    }
+
+    pub fn getPlatform(s: *State) ?*Platform {
+        if (s.platform) |p| {
+            return &s.platforms.items[p];
+        } else {
+            return null;
+        }
+    }
+
+    pub fn loadPlatform(s: *State, path: [:0]const u8) !void {
+        // No need to load anything if it already exists
+        if (s.isPlatformLoaded(path)) {
+            return;
+        }
+
+        try s.platforms.append(try Platform.init(s.allocator, path));
+    }
+
+    pub fn isPlatformLoaded(s: *State, path: [:0]const u8) bool {
+        for (s.platforms.items) |platform| {
+            if (std.mem.eql(u8, platform.path, path)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// Window position in pixels given a proportion of the view from 0 to 100.
@@ -155,8 +203,8 @@ fn dropCallback(_: ?*c.GLFWwindow, count: c_int, paths: [*c][*c]const u8) callco
     for (0..@intCast(count)) |i| {
         log.debug("adding dropped '{s}'\n", .{ paths[i] });
         // TODO: check the file is actually an FDT
-        const platform = Platform.init(state.allocator, std.mem.span(paths[i])) catch @panic("TODO");
-        state.platforms.append(platform) catch @panic("TODO");
+        state.loadPlatform(std.mem.span(paths[i])) catch @panic("TODO");
+        state.setPlatform(std.mem.span(paths[i]));
     }
 }
 
@@ -556,15 +604,15 @@ const usage_text =
 ;
 
 const Args = struct {
-    paths: std.ArrayList([]const u8),
+    paths: std.ArrayList([:0]const u8),
 
-    pub fn parse(allocator: Allocator, args: []const []const u8) !Args {
+    pub fn parse(allocator: Allocator, args: []const [:0]const u8) !Args {
         const stdout = std.io.getStdOut();
 
         const usage_text_fmt = fmt(allocator, usage_text, .{});
         defer allocator.free(usage_text_fmt);
 
-        var paths = std.ArrayList([]const u8).init(allocator);
+        var paths = std.ArrayList([:0]const u8).init(allocator);
 
         var arg_i: usize = 1;
         while (arg_i < args.len) : (arg_i += 1) {
@@ -600,24 +648,21 @@ pub fn main() !void {
     const args = try Args.parse(allocator, process_args);
     defer args.deinit();
 
-    // Do not need to deinit since it will be done when we deinit the whole
-    // list of platforms.
-    var init_platform: Platform = undefined;
-    if (args.paths.items.len > 0) {
-        init_platform = try Platform.init(allocator, args.paths.items[0]);
-    } else {
-        init_platform = try Platform.init(allocator, "dtbs/sel4/qemu_virt_aarch64.dtb");
-    }
-
     state = State.create(allocator);
     defer state.deinit();
 
-    try state.platforms.append(init_platform);
+    // Do not need to deinit since it will be done when we deinit the whole
+    // list of platforms.
+    if (args.paths.items.len > 0) {
+        // TODO: don't ignore other DTBs if mulitple arugments are given
+        const p = args.paths.items[0];
+        try state.loadPlatform(p);
+        state.setPlatform(p);
+    }
 
-    var platform = &state.platforms.getLast();
-
-    var dts = try decompileDtb(allocator, init_platform.path);
-    defer dts.deinit(allocator);
+    // TODO
+    // var dts = try decompileDtb(allocator, init_platform.path);
+    // defer dts.deinit(allocator);
 
     // TODO: probably make a struct that has it's own init/deinit and includes the map
     const linux_compatible_bytes = try readFileFull(allocator, "linux_compatible_list.txt");
@@ -689,7 +734,7 @@ pub fn main() !void {
 
         const NSString = objc.getClass("NSString").?;
 
-        const c_string: [:0]const u8 = "assets/icons/test-logo.png";
+        const c_string: [:0]const u8 = "assets/icons/macos.png";
         const ns_string = NSString.msgSend(objc.Object, "stringWithUTF8String:", .{
             c_string,
         });
@@ -700,7 +745,6 @@ pub fn main() !void {
         ns_image.msgSend(void, "initByReferencingFile:", .{
             ns_string,
         });
-        std.debug.print("here2\n", .{});
 
         application.setProperty("applicationIconImage", ns_image);
     } else {
@@ -760,13 +804,20 @@ pub fn main() !void {
 
     // TODO: move this into platform struct
     var highlighted_node: ?*dtb.Node = null;
-    var dtb_to_load: ?[]const u8 = null;
+    var dtb_to_load: ?[:0]const u8 = null;
     var nodes_expand_all = false;
     while (c.glfwWindowShouldClose(window) != c.GLFW_TRUE) {
         c.glfwPollEvents();
-        const window_title = fmt(allocator, "{s} - DTB viewer", .{ platform.path });
-        defer allocator.free(window_title);
-        c.glfwSetWindowTitle(window, window_title);
+
+        const maybe_platform = state.getPlatform();
+
+        if (maybe_platform) |platform| {
+            const window_title = fmt(allocator, "{s} - DTB viewer", .{ platform.path });
+            defer allocator.free(window_title);
+            c.glfwSetWindowTitle(window, window_title);
+        } else {
+            c.glfwSetWindowTitle(window, "DTB viewer");
+        }
 
         c.ImGui_ImplOpenGL3_NewFrame();
         c.ImGui_ImplGlfw_NewFrame();
@@ -800,16 +851,19 @@ pub fn main() !void {
                     c.igEndMenu();
                 }
                 if (builtin.mode == .Debug) {
-                    if (c.igBeginMenu("Colours", true)) {
-                        const sz = c.igGetTextLineHeight();
-                        for (0..c.ImGuiCol_COUNT) |i| {
-                            const name = c.igGetStyleColorName(@intCast(i));
-                            var p: c.ImVec2 = undefined;
-                            c.igGetCursorScreenPos(&p);
-                            c.ImDrawList_AddRectFilled(c.igGetWindowDrawList(), p, .{ .x = p.x + sz, .y = p.y + sz }, c.igGetColorU32_Col(@intCast(i), 1), 0, 0);
-                            c.igDummy(.{ .x = sz, .y = sz });
-                            c.igSameLine(0, -1.0);
-                            _ = c.igMenuItem_Bool(name, null, false, true);
+                    if (c.igBeginMenu("Debug", true)) {
+                        if (c.igBeginMenu("Colours", true)) {
+                            const sz = c.igGetTextLineHeight();
+                            for (0..c.ImGuiCol_COUNT) |i| {
+                                const name = c.igGetStyleColorName(@intCast(i));
+                                var p: c.ImVec2 = undefined;
+                                c.igGetCursorScreenPos(&p);
+                                c.ImDrawList_AddRectFilled(c.igGetWindowDrawList(), p, .{ .x = p.x + sz, .y = p.y + sz }, c.igGetColorU32_Col(@intCast(i), 1), 0, 0);
+                                c.igDummy(.{ .x = sz, .y = sz });
+                                c.igSameLine(0, -1.0);
+                                _ = c.igMenuItem_Bool(name, null, false, true);
+                            }
+                            c.igEndMenu();
                         }
                         c.igEndMenu();
                     }
@@ -828,14 +882,16 @@ pub fn main() !void {
             c.igEndMainMenuBar();
         }
 
+        // We have a DTB to load, but it might already be the current one.
         if (dtb_to_load) |d| {
-            if (!std.mem.eql(u8, platform.path, d)) {
-                highlighted_node = null;
-                nodes_expand_all = false;
-                // TODO: check if it platform already exists first
-                try state.platforms.append(try Platform.init(allocator, d));
-                platform = &state.platforms.getLast();
+            if (maybe_platform) |platform| {
+                if (!std.mem.eql(u8, platform.path, d)) {
+                    highlighted_node = null;
+                    nodes_expand_all = false;
+                }
             }
+            try state.loadPlatform(d);
+            state.setPlatform(d);
         }
 
         if (exit) {
@@ -861,130 +917,163 @@ pub fn main() !void {
             c.igEndPopup();
         }
 
-        c.igSetNextWindowPos(state.windowPos(0, 0), 0, .{});
-        _ = c.igBegin("DTBs", null, c.ImGuiWindowFlags_NoCollapse | c.ImGuiWindowFlags_NoResize);
-        c.igSetWindowSize_Vec2(state.windowSize(0.15, 1.0), 0);
-        for (state.platforms.items) |p| {
-            c.igText(p.path);
-        }
-        c.igEnd();
-
-        c.igSetNextWindowPos(state.windowPos(0.15, 0), 0, .{});
-        _ = c.igBegin("Tree", null, c.ImGuiWindowFlags_NoCollapse | c.ImGuiWindowFlags_NoResize);
-        c.igSetWindowSize_Vec2(state.windowSize(0.35, 1.0), 0);
-
-        // TODO: this logic is definetely wrong
-        const expand_all = c.igButton("Expand All", .{});
-        c.igSameLine(0, -1.0);
-        const collapse_all = c.igButton("Collapse All", .{});
-        if (!nodes_expand_all) {
-            nodes_expand_all = expand_all;
-        } else if (collapse_all) {
-            nodes_expand_all = false;
-        }
-
-        highlighted_node = try nodeTree(allocator, platform.root.children, highlighted_node, nodes_expand_all);
-        c.igEnd();
-
-        // === Selected Node Window ===
-        c.igSetNextWindowPos(state.windowPos(0.5, 0), 0, .{});
-
-        _ = c.igBegin("Selected Node", null, c.ImGuiWindowFlags_NoCollapse | c.ImGuiWindowFlags_NoResize);
-        c.igSetWindowSize_Vec2(state.windowSize(0.5, 0.5), 0);
-        if (highlighted_node) |node| {
-            var node_name = std.ArrayList(u8).init(allocator);
-            defer node_name.deinit();
-            const writer = node_name.writer();
-            try nodeNamesFmt(node, writer);
-            try writer.writeAll("\x00");
-            c.igText(node_name.items[0..node_name.items.len - 1:0]);
-            if (node.prop(.Compatible)) |compatible| {
-                if (linux_compatible_map.get(compatible[0])) |driver| {
-                    c.igText("Linux driver:");
-                    c.igSameLine(0, -1.0);
-                    const id = fmt(allocator, "{s}##linux", .{ driver });
-                    defer allocator.free(id);
-                    const url = fmt(allocator, "{s}/{s}", .{ LINUX_GITHUB, driver });
-                    defer allocator.free(url);
-                    c.igTextLinkOpenURL(id, url);
-                }
-                if (uboot_compatible_map.get(compatible[0])) |driver| {
-                    c.igText("U-Boot driver:");
-                    c.igSameLine(0, -1.0);
-                    const id = fmt(allocator, "{s}##uboot", .{ driver });
-                    defer allocator.free(id);
-                    const url = fmt(allocator, "{s}/{s}", .{ UBOOT_GITHUB, driver });
-                    defer allocator.free(url);
-                    c.igTextLinkOpenURL(id, url);
-                }
+        if (maybe_platform) |platform| {
+            c.igSetNextWindowPos(state.windowPos(0, 0), 0, .{});
+            _ = c.igBegin("DTBs", null, c.ImGuiWindowFlags_NoCollapse | c.ImGuiWindowFlags_NoResize);
+            c.igSetWindowSize_Vec2(state.windowSize(0.15, 1.0), 0);
+            for (state.platforms.items) |p| {
+                c.igText(p.path);
             }
-            for (node.props) |prop| {
-                const prop_fmt = fmt(allocator, "{any}", .{ prop });
-                defer allocator.free(prop_fmt);
-                c.igText(prop_fmt);
-            }
-        }
-        c.igEnd();
-        // ===========================
+            c.igEnd();
 
-        // === Details Window ===
-        c.igSetNextWindowPos(state.windowPos(0.5, 0.5), 0, .{});
-        _ = c.igBegin("Details", null, c.ImGuiWindowFlags_NoCollapse | c.ImGuiWindowFlags_NoResize);
-        c.igSetWindowSize_Vec2(state.windowSize(0.5, 0.5), 0);
-        if (c.igBeginTabBar("info", c.ImGuiTabBarFlags_None)) {
-            if (c.igBeginTabItem("Platform", null, c.ImGuiTabItemFlags_None)) {
-                c.igText(platform.model_str);
-                if (platform.main_memory) |main_memory| {
-                    if (c.igTreeNodeEx_Str(main_memory.fmt, c.ImGuiTreeNodeFlags_DefaultOpen)) {
-                        for (main_memory.regions.items) |region| {
-                            const human_size = humanSize(allocator, region.size);
-                            defer allocator.free(human_size);
-                            const addr = fmt(allocator, "[0x{x}..0x{x}] ({s})", .{ region.addr, region.addr + region.size, human_size });
-                            defer allocator.free(addr);
-                            if (c.igTreeNodeEx_Str(addr, c.ImGuiTreeNodeFlags_Leaf)) {
-                                c.igTreePop();
-                            }
-                        }
-                        c.igTreePop();
+            c.igSetNextWindowPos(state.windowPos(0.15, 0), 0, .{});
+            _ = c.igBegin("Tree", null, c.ImGuiWindowFlags_NoCollapse | c.ImGuiWindowFlags_NoResize);
+            c.igSetWindowSize_Vec2(state.windowSize(0.35, 1.0), 0);
+
+            // TODO: this logic is definetely wrong
+            const expand_all = c.igButton("Expand All", .{});
+            c.igSameLine(0, -1.0);
+            const collapse_all = c.igButton("Collapse All", .{});
+            if (!nodes_expand_all) {
+                nodes_expand_all = expand_all;
+            } else if (collapse_all) {
+                nodes_expand_all = false;
+            }
+
+            highlighted_node = try nodeTree(allocator, platform.root.children, highlighted_node, nodes_expand_all);
+            c.igEnd();
+
+            // === Selected Node Window ===
+            c.igSetNextWindowPos(state.windowPos(0.5, 0), 0, .{});
+
+            _ = c.igBegin("Selected Node", null, c.ImGuiWindowFlags_NoCollapse | c.ImGuiWindowFlags_NoResize);
+            c.igSetWindowSize_Vec2(state.windowSize(0.5, 0.5), 0);
+            if (highlighted_node) |node| {
+                var node_name = std.ArrayList(u8).init(allocator);
+                defer node_name.deinit();
+                const writer = node_name.writer();
+                try nodeNamesFmt(node, writer);
+                try writer.writeAll("\x00");
+                c.igText(node_name.items[0..node_name.items.len - 1:0]);
+                if (node.prop(.Compatible)) |compatible| {
+                    if (linux_compatible_map.get(compatible[0])) |driver| {
+                        c.igText("Linux driver:");
+                        c.igSameLine(0, -1.0);
+                        const id = fmt(allocator, "{s}##linux", .{ driver });
+                        defer allocator.free(id);
+                        const url = fmt(allocator, "{s}/{s}", .{ LINUX_GITHUB, driver });
+                        defer allocator.free(url);
+                        c.igTextLinkOpenURL(id, url);
+                    }
+                    if (uboot_compatible_map.get(compatible[0])) |driver| {
+                        c.igText("U-Boot driver:");
+                        c.igSameLine(0, -1.0);
+                        const id = fmt(allocator, "{s}##uboot", .{ driver });
+                        defer allocator.free(id);
+                        const url = fmt(allocator, "{s}/{s}", .{ UBOOT_GITHUB, driver });
+                        defer allocator.free(url);
+                        c.igTextLinkOpenURL(id, url);
                     }
                 }
-                if (platform.root.propAt(&.{ "cpus", "cpu@0" }, .RiscvIsaExtensions)) |extensions| {
-                    if (c.igTreeNodeEx_Str("RISC-V ISA Extensions", c.ImGuiTreeNodeFlags_DefaultOpen)) {
-                        for (extensions) |extension| {
-                            const c_extension = fmt(allocator, "{s}", .{ extension });
-                            defer allocator.free(c_extension);
-                            if (c.igTreeNodeEx_Str(c_extension, c.ImGuiTreeNodeFlags_Leaf)) {
-                                c.igTreePop();
+                for (node.props) |prop| {
+                    const prop_fmt = fmt(allocator, "{any}", .{ prop });
+                    defer allocator.free(prop_fmt);
+                    c.igText(prop_fmt);
+                }
+            }
+            c.igEnd();
+            // ===========================
+
+            // === Details Window ===
+            c.igSetNextWindowPos(state.windowPos(0.5, 0.5), 0, .{});
+            _ = c.igBegin("Details", null, c.ImGuiWindowFlags_NoCollapse | c.ImGuiWindowFlags_NoResize);
+            c.igSetWindowSize_Vec2(state.windowSize(0.5, 0.5), 0);
+            if (c.igBeginTabBar("info", c.ImGuiTabBarFlags_None)) {
+                if (c.igBeginTabItem("Platform", null, c.ImGuiTabItemFlags_None)) {
+                    c.igText(platform.model_str);
+                    if (platform.main_memory) |main_memory| {
+                        if (c.igTreeNodeEx_Str(main_memory.fmt, c.ImGuiTreeNodeFlags_DefaultOpen)) {
+                            for (main_memory.regions.items) |region| {
+                                const human_size = humanSize(allocator, region.size);
+                                defer allocator.free(human_size);
+                                const addr = fmt(allocator, "[0x{x}..0x{x}] ({s})", .{ region.addr, region.addr + region.size, human_size });
+                                defer allocator.free(addr);
+                                if (c.igTreeNodeEx_Str(addr, c.ImGuiTreeNodeFlags_Leaf)) {
+                                    c.igTreePop();
+                                }
                             }
+                            c.igTreePop();
                         }
-                        c.igTreePop();
+                    }
+                    if (platform.root.propAt(&.{ "cpus", "cpu@0" }, .RiscvIsaExtensions)) |extensions| {
+                        if (c.igTreeNodeEx_Str("RISC-V ISA Extensions", c.ImGuiTreeNodeFlags_DefaultOpen)) {
+                            for (extensions) |extension| {
+                                const c_extension = fmt(allocator, "{s}", .{ extension });
+                                defer allocator.free(c_extension);
+                                if (c.igTreeNodeEx_Str(c_extension, c.ImGuiTreeNodeFlags_Leaf)) {
+                                    c.igTreePop();
+                                }
+                            }
+                            c.igTreePop();
+                        }
+                    }
+                    c.igEndTabItem();
+                }
+                if (c.igBeginTabItem("Interrupts", null, c.ImGuiTabItemFlags_None)) {
+                    var buf = [_:0]u8{0} ** 100;
+                    _ = c.igInputText("input text", &buf, buf.len, 0, null, null);
+                    for (platform.irqs.items) |irq| {
+                        const irq_fmt = fmt(allocator, "{d} (0x{x}), {s}", .{ irq.number, irq.number, irq.node.name });
+                        defer allocator.free(irq_fmt);
+                        c.igText(irq_fmt);
+                    }
+                    c.igEndTabItem();
+                }
+                if (c.igBeginTabItem("Memory", null, c.ImGuiTabItemFlags_None)) {
+                    var buf = [_:0]u8{0} ** 100;
+                    _ = c.igInputTextWithHint("input text", "e.g 0x30400000", &buf, buf.len, 0, memoryInputTextCallback, null);
+                    for (platform.regions.items) |reg| {
+                        const reg_fmt = fmt(allocator, "[0x{x:0>12}..0x{x:0>12}], {s}", .{ reg.addr, reg.addr + reg.size, reg.node.name });
+                        defer allocator.free(reg_fmt);
+                        c.igText(reg_fmt);
+                    }
+                    c.igEndTabItem();
+                }
+                c.igEndTabBar();
+            }
+            c.igEnd();
+        } else {
+            // No platform, show welcome splash screen.
+            c.igSetNextWindowPos(state.windowPos(0.5, 0.5), 0, .{ .x = 0.5, .y = 0.5 });
+            _ = c.igBegin("Welcome", null, c.ImGuiWindowFlags_NoCollapse | c.ImGuiWindowFlags_NoResize | c.ImGuiWindowFlags_NoTitleBar);
+            c.igSetWindowSize_Vec2(state.windowSize(0.3, 0.3), 0);
+            c.igText("DTB viewer");
+            _ = c.igButton("Open DTB file", .{});
+
+            const recent_items = &.{ "dtbs/sel4/odroidc4.dtb", "dtbs/sel4/qemu_virt_riscv64.dtb", "dtbs/sel4/star64.dtb" };
+            c.igText("Recently opened");
+            var selected_item: ?usize = null;
+            if (c.igBeginTable("##recent-dtbs", 1, 0, .{}, 0.0)) {
+                inline for (recent_items, 0..) |r, i| {
+                    c.igTableNextRow(0, 0);
+                    // const colour = c.igGetColorU32_C
+                    // c.igTableSetBgColor(c.ImGuiTableBgTarget_RowBg0, .{});
+                    _ = c.igTableSetColumnIndex(0);
+                    const is_selected = selected_item != null and selected_item.? == i;
+                    const flags = if (is_selected) c.ImGuiSelectableFlags_Highlight else c.ImGuiSelectableFlags_None;
+
+                    if (c.igSelectable_Bool(r, is_selected, flags, .{})) {
+                        selected_item = i;
+                    }
+
+                    if (is_selected) {
+                        c.igSetItemDefaultFocus();
                     }
                 }
-                c.igEndTabItem();
+                c.igEndTable();
             }
-            if (c.igBeginTabItem("Interrupts", null, c.ImGuiTabItemFlags_None)) {
-                var buf = [_:0]u8{0} ** 100;
-                _ = c.igInputText("input text", &buf, buf.len, 0, null, null);
-                for (platform.irqs.items) |irq| {
-                    const irq_fmt = fmt(allocator, "{d} (0x{x}), {s}", .{ irq.number, irq.number, irq.node.name });
-                    defer allocator.free(irq_fmt);
-                    c.igText(irq_fmt);
-                }
-                c.igEndTabItem();
-            }
-            if (c.igBeginTabItem("Memory", null, c.ImGuiTabItemFlags_None)) {
-                var buf = [_:0]u8{0} ** 100;
-                _ = c.igInputTextWithHint("input text", "e.g 0x30400000", &buf, buf.len, 0, memoryInputTextCallback, null);
-                for (platform.regions.items) |reg| {
-                    const reg_fmt = fmt(allocator, "[0x{x:0>12}..0x{x:0>12}], {s}", .{ reg.addr, reg.addr + reg.size, reg.node.name });
-                    defer allocator.free(reg_fmt);
-                    c.igText(reg_fmt);
-                }
-                c.igEndTabItem();
-            }
-            c.igEndTabBar();
+            c.igEnd();
         }
-        c.igEnd();
         // ===========================
 
         c.igRender();
