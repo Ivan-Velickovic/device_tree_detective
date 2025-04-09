@@ -774,7 +774,7 @@ pub fn main() !void {
     const font_cfg = c.ImFontConfig_ImFontConfig();
     // Stop ImGui from freeing our font memory.
     font_cfg.*.FontDataOwnedByAtlas = false;
-    _ = c.ImFontAtlas_AddFontFromMemoryTTF(imio.*.Fonts, @constCast(@ptrCast(font.ptr)), @intCast(font.len), 18, font_cfg, null);
+    _ = c.ImFontAtlas_AddFontFromMemoryTTF(imio.*.Fonts, @constCast(@ptrCast(font.ptr)), @intCast(font.len), 14, font_cfg, null);
 
     c.igStyleColorsLight(null);
 
@@ -787,7 +787,7 @@ pub fn main() !void {
     // ===== Styling Begin =======
     const style = c.igGetStyle();
     style.*.TabRounding = 0;
-    c.ImGuiStyle_ScaleAllSizes(style, 2.0);
+    c.ImGuiStyle_ScaleAllSizes(style, 1.25);
 
     setColour(.child_bg, .{ .x = 0.6, .y = 0.6, .z = 0.6, .w = 1 });
     setColour(.popup_bg, .{ .x = 0.8, .y = 0.8, .z = 0.8, .w = 1 });
