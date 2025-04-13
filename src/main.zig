@@ -19,11 +19,14 @@ const c = @cImport({
     @cDefine("STB_IMAGE_IMPLEMENTATION", "");
     @cDefine("STBI_NO_STDIO", "");
     @cInclude("stb_image.h");
+    @cInclude("ig_extern.h");
 });
 
 // TODO: get this from build.zig.zon instead
 const VERSION = "0.1.0";
 const ABOUT = std.fmt.comptimePrint("DTB viewer v{s}", .{ VERSION });
+
+const SUPER_KEY_STR = if (builtin.os.tag == .macos) "CMD" else "CTRL";
 
 const font: [:0]const u8 = @embedFile("assets/fonts/inter/Inter-Medium.ttf");
 const logo: [:0]const u8 = @embedFile("assets/icons/macos.png");
@@ -90,6 +93,19 @@ const Colour = enum(usize) {
     nav_windowing_highlight,
     nav_windowing_dim_bg,
     modal_window_dim_bg,
+
+    pub fn toVec(comptime hex: u24) c.ImVec4 {
+        const r = (hex & 0xff0000) >> 16;
+        const g = (hex & 0x00ff00) >> 8;
+        const b = hex & 0x0000ff;
+
+        return .{
+            .x = @as(f32, @floatFromInt(r)) / 255.0,
+            .y = @as(f32, @floatFromInt(g)) / 255.0,
+            .z = @as(f32, @floatFromInt(b)) / 255.0,
+            .w = 0.5,
+        };
+    }
 };
 
 comptime {
@@ -100,6 +116,90 @@ fn setColour(colour: Colour, value: c.ImVec4) void {
     c.igGetStyle().*.Colors[@intFromEnum(colour)] = value;
 }
 
+const SavedState = struct {
+    allocator: Allocator,
+    path: []const u8,
+    file: std.fs.File,
+    parsed: ?std.json.Parsed(Json),
+    // TODO: statically allocate and put limit of a 100 or something?
+    recently_opened: std.ArrayList([:0]const u8),
+
+    const Json = struct {
+        recently_opened: []const [:0]const u8,
+    };
+
+    fn createEmpty(allocator: Allocator, path: []const u8, file: std.fs.File) error{OutOfMemory}!SavedState {
+        return .{
+            .allocator = allocator,
+            .path = path,
+            .file = file,
+            .parsed = null,
+            .recently_opened = std.ArrayList([:0]const u8).init(allocator),
+        };
+    }
+
+    pub fn create(allocator: Allocator, path: []const u8) error{OutOfMemory}!SavedState {
+        // Create the file if it does not exist.
+        const file = std.fs.cwd().openFile(path, .{ .mode = .read_write }) catch |e| {
+            switch (e) {
+                error.FileNotFound => {
+                    log.info("saved state configuration does not exist '{s}', starting from scratch", .{ path });
+                    const new_file = std.fs.cwd().createFile(path, .{}) catch @panic("TODO");
+                    return createEmpty(allocator, path, new_file);
+                },
+                else => @panic("TODO"),
+            }
+        };
+        const stat = file.stat() catch @panic("TODO");
+        const bytes = file.reader().readAllAlloc(allocator, stat.size) catch @panic("TODO");
+        defer allocator.free(bytes);
+        const parsed = std.json.parseFromSlice(Json, allocator, bytes, .{}) catch |e| {
+            log.err("could not parse saved state configuration '{s}' with error '{any}' removing and starting from scratch", .{ path, e });
+            return createEmpty(allocator, path, file);
+        };
+
+        var recently_opened = try std.ArrayList([:0]const u8).initCapacity(allocator, parsed.value.recently_opened.len);
+        for (parsed.value.recently_opened) |p| {
+            recently_opened.appendAssumeCapacity(p);
+        }
+
+        log.info("using existing user configuration '{s}'", .{ path });
+
+        return .{
+            .allocator = allocator,
+            .file = file,
+            .path = path,
+            .parsed = parsed,
+            .recently_opened = recently_opened,
+        };
+    }
+
+    pub fn isRecentlyOpened(s: *SavedState, path: []const u8) bool {
+        for (s.recently_opened.items) |p| {
+            if (std.mem.eql(u8, p, path)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// Take the current state and write it out to the assocaited path
+    pub fn save(s: *SavedState) !void {
+        try s.file.seekTo(0);
+        try s.file.setEndPos(0);
+        try std.json.stringify(.{ .recently_opened = s.recently_opened.items }, .{ .whitespace = .indent_4 }, s.file.writer());
+    }
+
+    pub fn deinit(s: *SavedState) void {
+        if (s.parsed) |p| {
+            p.deinit();
+        }
+        s.file.close();
+        s.recently_opened.deinit();
+    }
+};
+
 const State = struct {
     allocator: Allocator,
     /// Loaded platforms for inspection
@@ -109,6 +209,7 @@ const State = struct {
     // TODO: use defaults based on the monitor size
     window_width: u32 = 1920,
     window_height: u32 = 1080,
+    main_menu_bar_height: f32 = undefined,
 
     pub fn create(allocator: Allocator) State {
         return .{
@@ -135,6 +236,16 @@ const State = struct {
         unreachable;
     }
 
+    pub fn findPlatform(s: *State, path: [:0]const u8) usize {
+        for (s.platforms.items, 0..) |platform, i| {
+            if (std.mem.eql(u8, platform.path, path)) {
+                return i;
+            }
+        }
+
+        unreachable;
+    }
+
     pub fn getPlatform(s: *State) ?*Platform {
         if (s.platform) |p| {
             return &s.platforms.items[p];
@@ -143,13 +254,49 @@ const State = struct {
         }
     }
 
-    pub fn loadPlatform(s: *State, path: [:0]const u8) !void {
+    pub fn loadPlatform(s: *State, saved: *SavedState, path: [:0]const u8) !void {
         // No need to load anything if it already exists
         if (s.isPlatformLoaded(path)) {
             return;
         }
 
         try s.platforms.append(try Platform.init(s.allocator, path));
+
+        if (!saved.isRecentlyOpened(path)) {
+            // TODO: should instead order by recently opened
+            try saved.recently_opened.append(path);
+            try saved.save();
+        }
+    }
+
+    pub fn unloadPlatform(s: *State, path: [:0]const u8) void {
+        // First we need to get the current platform so we can
+        // update our state after mutating the platform array.
+        const maybe_current_platform = s.getPlatform();
+        const maybe_current_platform_index = s.platform;
+
+        // We need to find the platform for the given path.
+        const platform_index = s.findPlatform(path);
+        var platform = s.platforms.items[platform_index];
+        // No matter what, we destroy the current platform
+        defer platform.deinit();
+
+        _ = s.platforms.orderedRemove(platform_index);
+
+        // Now that we've changed the array, we need to fixup
+        // the current platform.
+
+        if (maybe_current_platform_index) |i| {
+            if (i == platform_index) {
+                if (i == 0) {
+                    s.platform = null;
+                } else {
+                    s.platform = i - 1;
+                }
+            } else {
+                s.platform = s.findPlatform(maybe_current_platform.?.path);
+            }
+        }
     }
 
     pub fn isPlatformLoaded(s: *State, path: [:0]const u8) bool {
@@ -166,15 +313,12 @@ const State = struct {
     pub fn windowPos(s: *State, xp: f32, yp: f32) c.ImVec2 {
         std.debug.assert(xp <= 1 and yp <= 1 and xp >= 0 and yp >= 0);
 
-        // TODO: this gets hacky, not sure how to do it properly
-        const menu_size = c.igGetTextLineHeightWithSpacing() + 1;
-
-        const y = (@as(f32, @floatFromInt(s.window_height)) * yp);
-        const x = (@as(f32, @floatFromInt(s.window_width)) * xp);
+        const y = (@as(f32, @floatFromInt(s.window_height))) * yp;
+        const x = @as(f32, @floatFromInt(s.window_width)) * xp;
 
         return .{
             .x = @round(x),
-            .y = @round(y) + menu_size,
+            .y = @round(y + s.main_menu_bar_height * (1 - yp)),
         };
     }
 
@@ -182,12 +326,9 @@ const State = struct {
     pub fn windowSize(s: *State, width: f32, height: f32) c.ImVec2 {
         std.debug.assert(width <= 1 and height <= 1 and width >= 0 and height >= 0);
 
-        // TODO: this gets hacky, not sure how to do it properly
-        const menu_size = c.igGetTextLineHeightWithSpacing() + 1;
-
         return .{
             .x = @as(f32, @floatFromInt(s.window_width)) * width,
-            .y = (@as(f32, @floatFromInt(s.window_height)) - menu_size) * height,
+            .y = (@as(f32, @floatFromInt(s.window_height)) - s.main_menu_bar_height) * height,
         };
     }
 
@@ -200,12 +341,13 @@ const State = struct {
 };
 
 var state: State = undefined;
+var saved_state: SavedState = undefined;
 
 fn dropCallback(_: ?*c.GLFWwindow, count: c_int, paths: [*c][*c]const u8) callconv(.C) void {
     for (0..@intCast(count)) |i| {
         log.debug("adding dropped '{s}'\n", .{ paths[i] });
         // TODO: check the file is actually an FDT
-        state.loadPlatform(std.mem.span(paths[i])) catch @panic("TODO");
+        state.loadPlatform(&saved_state, std.mem.span(paths[i])) catch @panic("TODO");
         state.setPlatform(std.mem.span(paths[i]));
     }
 }
@@ -653,12 +795,15 @@ pub fn main() !void {
     state = State.create(allocator);
     defer state.deinit();
 
+    saved_state = try SavedState.create(allocator, "user.json");
+    defer saved_state.deinit();
+
     // Do not need to deinit since it will be done when we deinit the whole
     // list of platforms.
     if (args.paths.items.len > 0) {
         // TODO: don't ignore other DTBs if mulitple arugments are given
         const p = args.paths.items[0];
-        try state.loadPlatform(p);
+        try state.loadPlatform(&saved_state, p);
         state.setPlatform(p);
     }
 
@@ -806,7 +951,6 @@ pub fn main() !void {
 
     // TODO: move this into platform struct
     var highlighted_node: ?*dtb.Node = null;
-    var dtb_to_load: ?[:0]const u8 = null;
     var nodes_expand_all = false;
     while (c.glfwWindowShouldClose(window) != c.GLFW_TRUE) {
         c.glfwPollEvents();
@@ -829,6 +973,9 @@ pub fn main() !void {
 
         var open_about = false;
         var exit = false;
+        var close = false;
+        var close_all = false;
+        var dtb_to_load: ?[:0]const u8 = null;
         if (c.igBeginMainMenuBar()) {
             if (c.igBeginMenu("File", true)) {
                 if (c.igBeginMenu("Example DTBs", true)) {
@@ -868,6 +1015,13 @@ pub fn main() !void {
                         c.igEndMenu();
                     }
                 }
+                if (c.igMenuItem_Bool("Close", SUPER_KEY_STR ++ " + W", false, true)) {
+                    close = true;
+                }
+                if (c.igMenuItem_Bool("Close All", null, false, true)) {
+                    close_all = true;
+                }
+                c.igSeparator();
                 if (c.igMenuItem_Bool("Exit", null, false, true)) {
                     exit = true;
                 }
@@ -882,11 +1036,29 @@ pub fn main() !void {
             c.igEndMainMenuBar();
         }
 
+        const menu_bar_window = c.igFindWindowByName("##MainMenuBar");
+        state.main_menu_bar_height = c.igExtern_MainMenuBarHeight(menu_bar_window);
+
+        if (close) {
+            if (state.getPlatform()) |p| {
+                // TODO: a bit weird
+                state.unloadPlatform(p.path);
+            }
+        }
+
+        if (close_all) {
+            state.platforms.clearAndFree();
+            for (state.platforms.items) |*platform| {
+                platform.deinit();
+            }
+            state.platform = null;
+        }
+
         // We have a DTB to load, but it might already be the current one.
         if (dtb_to_load) |d| {
             highlighted_node = null;
             nodes_expand_all = false;
-            try state.loadPlatform(d);
+            try state.loadPlatform(&saved_state, d);
             state.setPlatform(d);
         }
 
@@ -1046,14 +1218,13 @@ pub fn main() !void {
             c.igText("DTB viewer");
             _ = c.igButton("Open DTB file", .{});
 
-            const recent_items = &.{ "dtbs/sel4/odroidc4.dtb", "dtbs/sel4/qemu_virt_riscv64.dtb", "dtbs/sel4/star64.dtb" };
             c.igText("Recently opened");
             var selected_item: ?usize = null;
             if (c.igBeginTable("##recent-dtbs", 1, 0, .{}, 0.0)) {
-                inline for (recent_items, 0..) |r, i| {
+                for (saved_state.recently_opened.items, 0..) |r, i| {
                     c.igTableNextRow(0, 0);
-                    // const colour = c.igGetColorU32_C
-                    // c.igTableSetBgColor(c.ImGuiTableBgTarget_RowBg0, .{});
+                    const colour = c.igGetColorU32_Vec4(Colour.toVec(0xF2A05C));
+                    c.igTableSetBgColor(c.ImGuiTableBgTarget_RowBg0 + 1, colour, -1);
                     _ = c.igTableSetColumnIndex(0);
                     const is_selected = selected_item != null and selected_item.? == i;
                     const flags = if (is_selected) c.ImGuiSelectableFlags_Highlight else c.ImGuiSelectableFlags_None;
@@ -1069,6 +1240,12 @@ pub fn main() !void {
                 c.igEndTable();
             }
             c.igEnd();
+
+            if (selected_item) |i| {
+                const item: [:0]const u8 = saved_state.recently_opened.items[i];
+                try state.loadPlatform(&saved_state, item);
+                state.setPlatform(item);
+            }
         }
         // ===========================
 

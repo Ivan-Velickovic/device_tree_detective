@@ -65,6 +65,8 @@ pub fn build(b: *std.Build) void {
     exe.addIncludePath(imgui_backend_path);
     exe.addIncludePath(cimgui_gen_out_path);
 
+    exe.addCSourceFile(.{ .file = b.path("src/ig_extern.c") });
+
     const cpp_flags: []const []const u8 = &[_][]const u8
     {
         "-O2",

@@ -9,6 +9,9 @@
 
 ## Improvements and QoL
 
+* [ ] Goto parent
+* [ ] Goto interrupt-parent node, etc
+* [ ] keep track of last opened DTB?
 * [ ] import Linux at runtime and have it search that directroy for the list?
     * I would need to recursively iterate through every file, read all the contents
       and then match on the pattern
