@@ -116,6 +116,7 @@ fn setColour(colour: Colour, value: c.ImVec4) void {
     c.igGetStyle().*.Colors[@intFromEnum(colour)] = value;
 }
 
+// TODO: move into State struct
 const SavedState = struct {
     allocator: Allocator,
     path: []const u8,
@@ -1039,14 +1040,15 @@ pub fn main() !void {
         const menu_bar_window = c.igFindWindowByName("##MainMenuBar");
         state.main_menu_bar_height = c.igExtern_MainMenuBarHeight(menu_bar_window);
 
-        if (close) {
+        // TODO: should we use igShortcut instead?
+        if (close or c.igIsKeyChordPressed_Nil(c.ImGuiMod_Ctrl | c.ImGuiKey_W)) {
             if (state.getPlatform()) |p| {
-                // TODO: a bit weird
+                // TODO: a bit weird that we are using path here instead of index?
                 state.unloadPlatform(p.path);
             }
         }
 
-        if (close_all) {
+        if (close_all or c.igIsKeyChordPressed_Nil(c.ImGuiMod_Ctrl | c.ImGuiKey_W | c.ImGuiMod_Shift)) {
             state.platforms.clearAndFree();
             for (state.platforms.items) |*platform| {
                 platform.deinit();
