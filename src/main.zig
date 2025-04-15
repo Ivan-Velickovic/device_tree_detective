@@ -21,6 +21,7 @@ const c = @cImport({
     @cInclude("ig_extern.h");
     if (builtin.os.tag == .linux) {
         @cInclude("gtk/gtk.h");
+        @cInclude("gtk_extern.h");
     }
 });
 
@@ -800,10 +801,20 @@ fn openFilePicker(allocator: Allocator) !std.ArrayList([:0]const u8) {
             }
         }
     } else if (builtin.os.tag == .linux) {
-        if (c.gtk_init_check(null, null) == 0) {
-            unreachable;
+        const path = c.gtk_file_picker();
+        if (path) |p| {
+            try paths.append(try allocator.dupeZ(u8, std.mem.span(p)));
         }
-        _ = c.gtk_file_chooser_dialog_new("Open File", null, c.GTK_FILE_CHOOSER_ACTION_OPEN, "_Cancel", c.GTK_RESPONSE_CANCEL, "_Open", c.GTK_RESPONSE_ACCEPT);
+        // if (c.gtk_init_check(null, null) == 0) {
+        //     unreachable;
+        // }
+        // const dialog = c.gtk_file_chooser_dialog_new("Open DTB", null, c.GTK_FILE_CHOOSER_ACTION_OPEN, "_Cancel", c.GTK_RESPONSE_CANCEL, "_Open", c.GTK_RESPONSE_ACCEPT);
+        // std.debug.assert(dialog != null);
+
+        // if (c.gtk_dialog_run(c.gtk_widget_to_dialog(dialog)) == c.GTK_RESPONSE_ACCEPT) {
+        //     _ = c.gtk_file_chooser_get_filename(c.gtk_widget_to_file_chooser(dialog));
+        //     // std.debug.print("path {s}\n", .{ std.mem.span(path) });
+        // }
     }
 
     return paths;
