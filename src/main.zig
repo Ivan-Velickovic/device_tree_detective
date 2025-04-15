@@ -1279,11 +1279,9 @@ pub fn main() !void {
             if (c.igButton("Open DTB file", .{})) {
                 const paths = try openFilePicker(allocator);
                 defer {
-                    // TODO: problem is that recently_added items contains
-                    // pointers to path memory so we cnanot free it
-                    // for (paths.items) |path| {
-                    //     allocator.free(path);
-                    // }
+                    for (paths.items) |path| {
+                        allocator.free(path);
+                    }
                     paths.deinit();
                 }
                 for (paths.items) |path| {
