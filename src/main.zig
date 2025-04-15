@@ -20,6 +20,9 @@ const c = @cImport({
     @cDefine("STBI_NO_STDIO", "");
     @cInclude("stb_image.h");
     @cInclude("ig_extern.h");
+    if (builtin.os.tag == .linux) {
+        @cInclude("gtk/gtk.h");
+    }
 });
 
 // TODO: get this from build.zig.zon instead
@@ -768,6 +771,11 @@ fn openFilePicker(allocator: Allocator) !std.ArrayList([:0]const u8) {
                 try paths.append(owned_c_string);
             }
         }
+    } else if (builtin.os.tag == .linux) {
+        if (c.gtk_init_check(null, null) == 0) {
+            unreachable;
+        }
+        _ = c.gtk_file_chooser_dialog_new("Open File", null, c.GTK_FILE_CHOOSER_ACTION_OPEN, "_Cancel", c.GTK_RESPONSE_CANCEL, "_Open", c.GTK_RESPONSE_ACCEPT);
     }
 
     return paths;
@@ -825,6 +833,17 @@ pub fn main() !void {
     defer std.process.argsFree(allocator, process_args);
     const args = try Args.parse(allocator, process_args);
     defer args.deinit();
+
+    if (builtin.os.tag == .linux) {
+        log.info("GTK version build={d}.{d}.{d} runtime={d}.{d}.{d}", .{
+            c.GTK_MAJOR_VERSION,
+            c.GTK_MINOR_VERSION,
+            c.GTK_MICRO_VERSION,
+            c.gtk_get_major_version(),
+            c.gtk_get_minor_version(),
+            c.gtk_get_micro_version(),
+        });
+    }
 
     state = State.create(allocator);
     defer state.deinit();
@@ -1270,7 +1289,9 @@ pub fn main() !void {
                 for (paths.items) |path| {
                     try state.loadPlatform(&saved_state, path);
                 }
-                state.setPlatform(paths.getLast());
+                if (paths.items.len > 0) {
+                    state.setPlatform(paths.getLast());
+                }
             }
 
             c.igText("Recently opened");

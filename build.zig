@@ -50,6 +50,8 @@ pub fn build(b: *std.Build) void {
             exe.linkSystemLibrary("Xrandr");
             exe.linkSystemLibrary("Xi");
             exe.linkSystemLibrary("dl");
+
+            exe.linkSystemLibrary("gtk+-3.0");
         },
         else => @panic("unknown OS target"),
     }
