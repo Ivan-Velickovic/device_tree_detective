@@ -9,7 +9,8 @@
 
 ## Improvements and QoL
 
-* [ ] Goto parent
+* [ ] Linux device tree bindings map/link for a compatible string
+* [ ] Goto parent node
 * [ ] Goto interrupt-parent node, etc
 * [ ] keep track of last opened DTB?
 * [ ] import Linux at runtime and have it search that directroy for the list?

@@ -161,7 +161,7 @@ const SavedState = struct {
 
         var recently_opened = try std.ArrayList([:0]const u8).initCapacity(allocator, parsed.value.recently_opened.len);
         for (parsed.value.recently_opened) |p| {
-            recently_opened.appendAssumeCapacity(p);
+            recently_opened.appendAssumeCapacity(try allocator.dupeZ(u8, p));
         }
 
         log.info("using existing user configuration '{s}'", .{ path });
@@ -197,6 +197,9 @@ const SavedState = struct {
             p.deinit();
         }
         s.file.close();
+        for (s.recently_opened.items) |p| {
+            s.allocator.free(p);
+        }
         s.recently_opened.deinit();
     }
 };
@@ -261,11 +264,12 @@ const State = struct {
             return;
         }
 
-        try s.platforms.append(try Platform.init(s.allocator, path));
+        const platform = try Platform.init(s.allocator, path);
+        try s.platforms.append(platform);
 
         if (!saved.isRecentlyOpened(path)) {
             // TODO: should instead order by recently opened
-            try saved.recently_opened.append(path);
+            try saved.recently_opened.append(try s.allocator.dupeZ(u8, path));
             try saved.save();
         }
     }
@@ -525,18 +529,19 @@ const Platform = struct {
     }
 
     pub fn deinit(platform: *Platform) void {
+        const allocator = platform.allocator;
         if (platform.main_memory) |m| {
-            platform.allocator.free(m.fmt);
+            allocator.free(m.fmt);
             m.regions.deinit();
         }
-        platform.allocator.free(platform.path);
+        allocator.free(platform.path);
         platform.irqs.deinit();
         platform.regions.deinit();
-        platform.root.deinit(platform.allocator);
+        platform.root.deinit(allocator);
         if (platform.model != null){
-            platform.allocator.free(platform.model_str);
+            allocator.free(platform.model_str);
         }
-        platform.allocator.free(platform.dtb_bytes);
+        allocator.free(platform.dtb_bytes);
     }
 };
 
@@ -738,6 +743,34 @@ fn exampleDtbs(allocator: Allocator, dir_path: []const u8) !std.ArrayList([:0]co
 fn memoryInputTextCallback(_: ?*c.ImGuiInputTextCallbackData) callconv(.C) c_int {
     std.debug.print("got input\n", .{ });
     return 0;
+}
+
+fn openFilePicker(allocator: Allocator) !std.ArrayList([:0]const u8) {
+    var paths = std.ArrayList([:0]const u8).init(allocator);
+    // TODO: when creating classes/objects, may need to handle deallaction explicilty?
+    if (builtin.os.tag == .macos) {
+        const NSOpenPanel = objc.getClass("NSOpenPanel").?;
+        const panel = NSOpenPanel.msgSend(objc.Object, "openPanel", .{});
+        const response = panel.msgSend(usize, "runModal", .{});
+        // const application = objc.getClass("NSApplication").?.msgSend(objc.Object, "sharedApplication", .{});
+        // const NSApplication = objc.getClass("NSApplication").?;
+        // const NSModalResponseOK = NSApplication.getProperty(usize, "NSModalResponseOK");
+        // TODO: use actual constant
+        if (response == 1) {
+            const urls = panel.getProperty(objc.Object, "URLs");
+            var it = urls.iterate();
+            while (it.next()) |url| {
+                // fileSystemRepresentation will deallocate the string, so we must copy it
+                // for ourselves.
+                const c_string = url.getProperty([*c]u8, "fileSystemRepresentation");
+                const owned_c_string = try allocator.dupeZ(u8, std.mem.span(c_string));
+
+                try paths.append(owned_c_string);
+            }
+        }
+    }
+
+    return paths;
 }
 
 const usage_text =
@@ -974,6 +1007,7 @@ pub fn main() !void {
 
         var open_about = false;
         var exit = false;
+        var open = false;
         var close = false;
         var close_all = false;
         var dtb_to_load: ?[:0]const u8 = null;
@@ -1016,6 +1050,9 @@ pub fn main() !void {
                         c.igEndMenu();
                     }
                 }
+                if (c.igMenuItem_Bool("Open", SUPER_KEY_STR ++ " + O", false, true)) {
+                    open = true;
+                }
                 if (c.igMenuItem_Bool("Close", SUPER_KEY_STR ++ " + W", false, true)) {
                     close = true;
                 }
@@ -1041,6 +1078,8 @@ pub fn main() !void {
         state.main_menu_bar_height = c.igExtern_MainMenuBarHeight(menu_bar_window);
 
         // TODO: should we use igShortcut instead?
+        // Yes we should, e.g if I open the 'about' window and the do CTRL + W the window
+        // will close.
         if (close or c.igIsKeyChordPressed_Nil(c.ImGuiMod_Ctrl | c.ImGuiKey_W)) {
             if (state.getPlatform()) |p| {
                 // TODO: a bit weird that we are using path here instead of index?
@@ -1218,7 +1257,21 @@ pub fn main() !void {
             _ = c.igBegin("Welcome", null, c.ImGuiWindowFlags_NoCollapse | c.ImGuiWindowFlags_NoResize | c.ImGuiWindowFlags_NoTitleBar);
             c.igSetWindowSize_Vec2(state.windowSize(0.3, 0.3), 0);
             c.igText("DTB viewer");
-            _ = c.igButton("Open DTB file", .{});
+            if (c.igButton("Open DTB file", .{})) {
+                const paths = try openFilePicker(allocator);
+                defer {
+                    // TODO: problem is that recently_added items contains
+                    // pointers to path memory so we cnanot free it
+                    // for (paths.items) |path| {
+                    //     allocator.free(path);
+                    // }
+                    paths.deinit();
+                }
+                for (paths.items) |path| {
+                    try state.loadPlatform(&saved_state, path);
+                }
+                state.setPlatform(paths.getLast());
+            }
 
             c.igText("Recently opened");
             var selected_item: ?usize = null;
