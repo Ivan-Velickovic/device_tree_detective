@@ -217,6 +217,8 @@ const State = struct {
     window_width: u32 = 1920,
     window_height: u32 = 1080,
     main_menu_bar_height: f32 = undefined,
+    /// Tree view state
+    highlighted_node: ?*dtb.Node = null,
 
     pub fn create(allocator: Allocator) State {
         return .{
@@ -228,6 +230,12 @@ const State = struct {
     pub fn setPlatform(s: *State, path: [:0]const u8) void {
         for (s.platforms.items, 0..) |platform, i| {
             if (std.mem.eql(u8, platform.path, path)) {
+                if (s.platform) |curr_platform| {
+                    if (curr_platform == i) {
+                        // Reset platform-specific stored state
+                        s.highlighted_node = null;
+                    }
+                }
                 s.platform = i;
                 return;
             }
@@ -296,11 +304,13 @@ const State = struct {
 
         if (maybe_current_platform_index) |i| {
             if (i == platform_index) {
+                // We are unloading the current platform
                 if (i == 0) {
                     s.platform = null;
                 } else {
                     s.platform = i - 1;
                 }
+                s.highlighted_node = null;
             } else {
                 s.platform = s.findPlatform(maybe_current_platform.?.path);
             }
@@ -810,6 +820,8 @@ const usage_text =
 
 const Args = struct {
     paths: std.ArrayList([:0]const u8),
+    // TODO: eventually remove and do automatic DPI scaling
+    high_dpi: bool,
 
     pub fn parse(allocator: Allocator, args: []const [:0]const u8) !Args {
         const stdout = std.io.getStdOut();
@@ -818,6 +830,7 @@ const Args = struct {
         defer allocator.free(usage_text_fmt);
 
         var paths = std.ArrayList([:0]const u8).init(allocator);
+        var high_dpi = false;
 
         var arg_i: usize = 1;
         while (arg_i < args.len) : (arg_i += 1) {
@@ -825,6 +838,8 @@ const Args = struct {
             if (std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "--help")) {
                 try stdout.writeAll(usage_text_fmt);
                 std.process.exit(0);
+            } else if (std.mem.eql(u8, arg, "--high-dpi")) {
+                high_dpi = true;
             } else {
                 try paths.append(arg);
             }
@@ -832,6 +847,7 @@ const Args = struct {
 
         return .{
             .paths = paths,
+            .high_dpi = high_dpi,
         };
     }
 
@@ -988,6 +1004,7 @@ pub fn main() !void {
     const imio = c.igGetIO_Nil();
     imio.*.ConfigFlags = c.ImGuiConfigFlags_NavEnableKeyboard;
 
+    const font_size: f32 = if (args.high_dpi) 20 else 14;
     const font_cfg = c.ImFontConfig_ImFontConfig();
     if (builtin.os.tag == .macos) {
         // TODO: this does largely fix the blurriness seen on macOS.
@@ -997,7 +1014,7 @@ pub fn main() !void {
     }
     // Stop ImGui from freeing our font memory.
     font_cfg.*.FontDataOwnedByAtlas = false;
-    _ = c.ImFontAtlas_AddFontFromMemoryTTF(imio.*.Fonts, @constCast(@ptrCast(font.ptr)), @intCast(font.len), 14, font_cfg, null);
+    _ = c.ImFontAtlas_AddFontFromMemoryTTF(imio.*.Fonts, @constCast(@ptrCast(font.ptr)), @intCast(font.len), font_size, font_cfg, null);
 
     c.igStyleColorsLight(null);
 
@@ -1010,7 +1027,8 @@ pub fn main() !void {
     // ===== Styling Begin =======
     const style = c.igGetStyle();
     style.*.TabRounding = 0;
-    c.ImGuiStyle_ScaleAllSizes(style, 1.25);
+    const scale: f32 = if (args.high_dpi) 2 else 1.25;
+    c.ImGuiStyle_ScaleAllSizes(style, scale);
 
     setColour(.child_bg, .{ .x = 0.6, .y = 0.6, .z = 0.6, .w = 1 });
     setColour(.popup_bg, .{ .x = 0.8, .y = 0.8, .z = 0.8, .w = 1 });
@@ -1028,7 +1046,6 @@ pub fn main() !void {
     // ===== Styling End =======
 
     // TODO: move this into platform struct
-    var highlighted_node: ?*dtb.Node = null;
     var nodes_expand_all = false;
     while (c.glfwWindowShouldClose(window) != c.GLFW_TRUE) {
         c.glfwPollEvents();
@@ -1147,7 +1164,6 @@ pub fn main() !void {
 
         // We have a DTB to load, but it might already be the current one.
         if (dtb_to_load) |d| {
-            highlighted_node = null;
             nodes_expand_all = false;
             try state.loadPlatform(&saved_state, d);
             state.setPlatform(d);
@@ -1199,7 +1215,7 @@ pub fn main() !void {
                 nodes_expand_all = false;
             }
 
-            highlighted_node = try nodeTree(allocator, platform.root.children, highlighted_node, nodes_expand_all);
+            state.highlighted_node = try nodeTree(allocator, platform.root.children, state.highlighted_node, nodes_expand_all);
             c.igEnd();
 
             // === Selected Node Window ===
@@ -1207,7 +1223,7 @@ pub fn main() !void {
 
             _ = c.igBegin("Selected Node", null, c.ImGuiWindowFlags_NoCollapse | c.ImGuiWindowFlags_NoResize);
             c.igSetWindowSize_Vec2(state.windowSize(0.5, 0.5), 0);
-            if (highlighted_node) |node| {
+            if (state.highlighted_node) |node| {
                 var node_name = std.ArrayList(u8).init(allocator);
                 defer node_name.deinit();
                 const writer = node_name.writer();
