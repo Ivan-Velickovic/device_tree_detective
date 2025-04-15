@@ -353,11 +353,11 @@ var saved_state: SavedState = undefined;
 
 fn dropCallback(_: ?*c.GLFWwindow, count: c_int, paths: [*c][*c]const u8) callconv(.C) void {
     for (0..@intCast(count)) |i| {
-        log.debug("adding dropped '{s}'\n", .{ paths[i] });
+        log.debug("adding dropped '{s}'", .{ paths[i] });
         // TODO: check the file is actually an FDT
         state.loadPlatform(&saved_state, std.mem.span(paths[i])) catch @panic("TODO");
-        state.setPlatform(std.mem.span(paths[i]));
     }
+    state.setPlatform(std.mem.span(paths[@as(usize, @intCast(count)) - 1]));
 }
 
 /// 16MiB. Should be plenty given the biggest DTS in Linux at the
@@ -480,7 +480,10 @@ const Platform = struct {
     };
 
     pub fn init(allocator: Allocator, path: []const u8) !Platform {
-        const dtb_file = try std.fs.cwd().openFile(path, .{});
+        const dtb_file = std.fs.cwd().openFile(path, .{}) catch |e| {
+            log.err("failed to open '{s}': {any}", .{ path, e });
+            @panic("todo");
+        };
         const dtb_size = (try dtb_file.stat()).size;
         const dtb_bytes = try dtb_file.reader().readAllAlloc(allocator, dtb_size);
         const root = try dtb.parse(allocator, dtb_bytes);
@@ -869,11 +872,11 @@ pub fn main() !void {
 
     // Do not need to deinit since it will be done when we deinit the whole
     // list of platforms.
+    for (args.paths.items) |path| {
+        try state.loadPlatform(&saved_state, path);
+    }
     if (args.paths.items.len > 0) {
-        // TODO: don't ignore other DTBs if mulitple arugments are given
-        const p = args.paths.items[0];
-        try state.loadPlatform(&saved_state, p);
-        state.setPlatform(p);
+        state.setPlatform(args.paths.getLast());
     }
 
     // TODO
@@ -1135,11 +1138,11 @@ pub fn main() !void {
         }
 
         if (close_all or c.igIsKeyChordPressed_Nil(c.ImGuiMod_Ctrl | c.ImGuiKey_W | c.ImGuiMod_Shift)) {
-            state.platforms.clearAndFree();
             for (state.platforms.items) |*platform| {
                 platform.deinit();
             }
             state.platform = null;
+            state.platforms.clearAndFree();
         }
 
         // We have a DTB to load, but it might already be the current one.
