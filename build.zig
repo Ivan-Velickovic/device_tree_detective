@@ -35,6 +35,11 @@ pub fn build(b: *std.Build) void {
     switch (target.result.os.tag) {
         .macos => {
             exe.linkFramework("OpenGL");
+            exe.linkSystemLibrary2("glfw", .{
+                // Prefer static linking so we do not actually have to ship any 3rd
+                // party libraries for macOS.
+                .preferred_link_mode = .static,
+            });
             const maybe_objc_dep = b.lazyDependency("objc", .{
                 .target = target,
                 .optimize = optimize,
@@ -50,13 +55,13 @@ pub fn build(b: *std.Build) void {
             exe.linkSystemLibrary("Xrandr");
             exe.linkSystemLibrary("Xi");
             exe.linkSystemLibrary("dl");
+            exe.linkSystemLibrary("glfw");
 
             exe.linkSystemLibrary("gtk+-3.0");
         },
         else => @panic("unknown OS target"),
     }
 
-    exe.linkSystemLibrary("glfw");
     exe.linkLibC();
 
     const cimgui_gen_out_path = cimgui_dep.path("generator/output");

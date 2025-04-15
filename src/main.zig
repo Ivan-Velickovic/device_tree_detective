@@ -748,6 +748,22 @@ fn memoryInputTextCallback(_: ?*c.ImGuiInputTextCallbackData) callconv(.C) c_int
     return 0;
 }
 
+fn handleFileDialogue(allocator: Allocator, s: *State, saved: *SavedState) !void {
+    const paths = try openFilePicker(allocator);
+    defer {
+        for (paths.items) |path| {
+            allocator.free(path);
+        }
+        paths.deinit();
+    }
+    for (paths.items) |path| {
+        try s.loadPlatform(saved, path);
+    }
+    if (paths.items.len > 0) {
+        s.setPlatform(paths.getLast());
+    }
+}
+
 fn openFilePicker(allocator: Allocator) !std.ArrayList([:0]const u8) {
     var paths = std.ArrayList([:0]const u8).init(allocator);
     // TODO: when creating classes/objects, may need to handle deallaction explicilty?
@@ -970,6 +986,12 @@ pub fn main() !void {
     imio.*.ConfigFlags = c.ImGuiConfigFlags_NavEnableKeyboard;
 
     const font_cfg = c.ImFontConfig_ImFontConfig();
+    if (builtin.os.tag == .macos) {
+        // TODO: this does largely fix the blurriness seen on macOS.
+        // Not sure if it's the full solution. There's also https://github.com/ocornut/imgui/blob/master/docs/FONTS.md#using-freetype-rasterizer-imgui_freetype
+        // and some comments on the RasterizerDensity field definition in imgui.
+        font_cfg.*.RasterizerDensity = 2.0;
+    }
     // Stop ImGui from freeing our font memory.
     font_cfg.*.FontDataOwnedByAtlas = false;
     _ = c.ImFontAtlas_AddFontFromMemoryTTF(imio.*.Fonts, @constCast(@ptrCast(font.ptr)), @intCast(font.len), 14, font_cfg, null);
@@ -1032,6 +1054,16 @@ pub fn main() !void {
         var dtb_to_load: ?[:0]const u8 = null;
         if (c.igBeginMainMenuBar()) {
             if (c.igBeginMenu("File", true)) {
+                if (c.igMenuItem_Bool("Open", SUPER_KEY_STR ++ " + O", false, true)) {
+                    open = true;
+                }
+                if (c.igMenuItem_Bool("Close", SUPER_KEY_STR ++ " + W", false, true)) {
+                    close = true;
+                }
+                if (c.igMenuItem_Bool("Close All", null, false, true)) {
+                    close_all = true;
+                }
+                c.igSeparator();
                 if (c.igBeginMenu("Example DTBs", true)) {
                     if (c.igBeginMenu("seL4", true)) {
                         for (sel4_example_dtbs.items) |example| {
@@ -1069,15 +1101,6 @@ pub fn main() !void {
                         c.igEndMenu();
                     }
                 }
-                if (c.igMenuItem_Bool("Open", SUPER_KEY_STR ++ " + O", false, true)) {
-                    open = true;
-                }
-                if (c.igMenuItem_Bool("Close", SUPER_KEY_STR ++ " + W", false, true)) {
-                    close = true;
-                }
-                if (c.igMenuItem_Bool("Close All", null, false, true)) {
-                    close_all = true;
-                }
                 c.igSeparator();
                 if (c.igMenuItem_Bool("Exit", null, false, true)) {
                     exit = true;
@@ -1099,6 +1122,11 @@ pub fn main() !void {
         // TODO: should we use igShortcut instead?
         // Yes we should, e.g if I open the 'about' window and the do CTRL + W the window
         // will close.
+
+        if (open or c.igIsKeyChordPressed_Nil(c.ImGuiMod_Ctrl | c.ImGuiKey_O)) {
+            try handleFileDialogue(allocator, &state, &saved_state);
+        }
+
         if (close or c.igIsKeyChordPressed_Nil(c.ImGuiMod_Ctrl | c.ImGuiKey_W)) {
             if (state.getPlatform()) |p| {
                 // TODO: a bit weird that we are using path here instead of index?
@@ -1277,19 +1305,7 @@ pub fn main() !void {
             c.igSetWindowSize_Vec2(state.windowSize(0.3, 0.3), 0);
             c.igText("DTB viewer");
             if (c.igButton("Open DTB file", .{})) {
-                const paths = try openFilePicker(allocator);
-                defer {
-                    for (paths.items) |path| {
-                        allocator.free(path);
-                    }
-                    paths.deinit();
-                }
-                for (paths.items) |path| {
-                    try state.loadPlatform(&saved_state, path);
-                }
-                if (paths.items.len > 0) {
-                    state.setPlatform(paths.getLast());
-                }
+                try handleFileDialogue(allocator, &state, &saved_state);
             }
 
             c.igText("Recently opened");

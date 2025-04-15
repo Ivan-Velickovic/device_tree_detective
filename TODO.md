@@ -9,6 +9,7 @@
 
 ## Improvements and QoL
 
+* [ ] On macOS, Window loses focus after closing file picker, not sure why
 * [ ] Linux device tree bindings map/link for a compatible string
 * [ ] Goto parent node
 * [ ] Goto interrupt-parent node, etc
