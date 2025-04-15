@@ -9,6 +9,7 @@
 
 ## Improvements and QoL
 
+* [ ] If no DTBs are open and we get close shortcut, just quit the whole app?
 * [ ] On macOS, Window loses focus after closing file picker, not sure why
 * [ ] Linux device tree bindings map/link for a compatible string
 * [ ] Goto parent node
