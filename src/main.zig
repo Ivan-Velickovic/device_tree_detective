@@ -11,7 +11,6 @@ const c = @cImport({
     @cDefine("CIMGUI_DEFINE_ENUMS_AND_STRUCTS", {});
     @cDefine("CIMGUI_USE_OPENGL3", {});
     @cDefine("CIMGUI_USE_GLFW", {});
-    // @cDefine("GLFW_INCLUDE_NONE", "1");
     @cInclude("cimgui.h");
     @cInclude("cimgui_impl.h");
     @cInclude("GLFW/glfw3.h");
