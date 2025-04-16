@@ -710,24 +710,43 @@ fn readFileFull(allocator: Allocator, path: []const u8) ![]const u8 {
     return bytes;
 }
 
-fn compatibleMap(allocator: Allocator, bytes: []const u8) !std.StringHashMap([]const u8) {
-    var map = std.StringHashMap([]const u8).init(allocator);
-    var iterator = std.mem.splitScalar(u8, bytes, '\n');
-    while (iterator.next()) |line| {
-        if (line.len == 0) {
-            // TODO: not sure why I have to have this, the file does not have an extra newline or anything
-            continue;
+const CompatibleMap = struct {
+    allocator: Allocator,
+    // This map will point to data in the file bytes, therefore 'bytes'
+    // must be valid as long as the map.
+    map: std.StringHashMap([]const u8),
+    bytes: []const u8,
+
+    pub fn create(allocator: Allocator, path: []const u8) !CompatibleMap {
+        const bytes = try readFileFull(allocator, path);
+
+        var map = std.StringHashMap([]const u8).init(allocator);
+        var iterator = std.mem.splitScalar(u8, bytes, '\n');
+        while (iterator.next()) |line| {
+            if (line.len == 0) {
+                // TODO: not sure why I have to have this, the file does not have an extra newline or anything
+                continue;
+            }
+            var line_split = std.mem.splitScalar(u8, line, ':');
+            const filename = line_split.first();
+            const compatible = line_split.rest();
+            try map.put(compatible, filename);
+            std.debug.assert(compatible.len != 0);
+            std.debug.assert(filename.len != 0);
         }
-        var line_split = std.mem.splitScalar(u8, line, ':');
-        const filename = line_split.first();
-        const compatible = line_split.rest();
-        try map.put(compatible, filename);
-        std.debug.assert(compatible.len != 0);
-        std.debug.assert(filename.len != 0);
+
+        return .{
+            .allocator = allocator,
+            .bytes = bytes,
+            .map = map,
+        };
     }
 
-    return map;
-}
+    pub fn deinit(compatible: *CompatibleMap) void {
+        compatible.allocator.free(compatible.bytes);
+        compatible.map.deinit();
+    }
+};
 
 // TODO: clean up
 fn stringLessThan(_: void, lhs: []const u8, rhs: []const u8) bool {
@@ -861,7 +880,6 @@ const Args = struct {
 };
 
 pub fn main() !void {
-    // const allocator = std.heap.c_allocator;
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
     defer {
@@ -904,14 +922,12 @@ pub fn main() !void {
     // defer dts.deinit(allocator);
 
     // TODO: probably make a struct that has it's own init/deinit and includes the map
-    const linux_compatible_bytes = try readFileFull(allocator, "linux_compatible_list.txt");
-    defer allocator.free(linux_compatible_bytes);
-    var linux_compatible_map = try compatibleMap(allocator, linux_compatible_bytes);
-    defer linux_compatible_map.deinit();
-    const uboot_compatible_bytes = try readFileFull(allocator, "uboot_compatible_list.txt");
-    defer allocator.free(uboot_compatible_bytes);
-    var uboot_compatible_map = try compatibleMap(allocator, uboot_compatible_bytes);
-    defer uboot_compatible_map.deinit();
+    var linux_driver_compatible = try CompatibleMap.create(allocator, "linux_compatible_list.txt");
+    defer linux_driver_compatible.deinit();
+    var linux_dt_binding_compatible = try CompatibleMap.create(allocator, "dt_bindings_list.txt");
+    defer linux_dt_binding_compatible.deinit();
+    var uboot_driver_compatible = try CompatibleMap.create(allocator, "uboot_compatible_list.txt");
+    defer uboot_driver_compatible.deinit();
 
     const sel4_example_dtbs = try exampleDtbs(allocator, "dtbs/sel4");
     defer {
@@ -1240,7 +1256,8 @@ pub fn main() !void {
                 try writer.writeAll("\x00");
                 c.igText(node_name.items[0..node_name.items.len - 1:0]);
                 if (node.prop(.Compatible)) |compatible| {
-                    if (linux_compatible_map.get(compatible[0])) |driver| {
+                    // TODO: do it for all compatibles, not just the first
+                    if (linux_driver_compatible.map.get(compatible[0])) |driver| {
                         c.igText("Linux driver:");
                         c.igSameLine(0, -1.0);
                         const id = fmt(allocator, "{s}##linux", .{ driver });
@@ -1249,7 +1266,16 @@ pub fn main() !void {
                         defer allocator.free(url);
                         c.igTextLinkOpenURL(id, url);
                     }
-                    if (uboot_compatible_map.get(compatible[0])) |driver| {
+                    if (linux_dt_binding_compatible.map.get(compatible[0])) |driver| {
+                        c.igText("Linux device tree bindings:");
+                        c.igSameLine(0, -1.0);
+                        const id = fmt(allocator, "{s}##linux-dt-bindings", .{ driver });
+                        defer allocator.free(id);
+                        const url = fmt(allocator, "{s}/{s}", .{ LINUX_GITHUB, driver });
+                        defer allocator.free(url);
+                        c.igTextLinkOpenURL(id, url);
+                    }
+                    if (uboot_driver_compatible.map.get(compatible[0])) |driver| {
                         c.igText("U-Boot driver:");
                         c.igSameLine(0, -1.0);
                         const id = fmt(allocator, "{s}##uboot", .{ driver });
