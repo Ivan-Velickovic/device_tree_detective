@@ -7,7 +7,6 @@ static void wait_for_cleanup(void)
     }
 }
 
-// TODO: need to free with g_free
 char *gtk_file_picker(void) {
     if (!gtk_init_check( NULL, NULL)) {
         return NULL;

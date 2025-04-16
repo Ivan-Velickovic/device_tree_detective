@@ -25,7 +25,6 @@
 * [ ] live-reload if the DTB is edited/updated?
 * [ ] multiple DTBs open at the same time via tabs
 * [ ] IRQ info based on GIC etc
-* [ ] opening files
 * [ ] In platform info show what RISC-V extensions a CPU supports in a nice way
 * [ ] list lists of strings as a drop-down in the 'selected node' view
 * [ ] dtb properites to parse
@@ -45,7 +44,6 @@
 * [ ] memory view, e.g let's say i just have an address and need to find the
       coressponding device
 * [ ] check compatible map, arm,cortex-a55 was coming with imx uboot cpu driver
-* [ ] window size/position seems messed up for selected node/details
 * [ ] some colours are still messed up
 
 ```

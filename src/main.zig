@@ -783,6 +783,7 @@ fn openFilePicker(allocator: Allocator) !std.ArrayList([:0]const u8) {
     if (builtin.os.tag == .macos) {
         const NSOpenPanel = objc.getClass("NSOpenPanel").?;
         const panel = NSOpenPanel.msgSend(objc.Object, "openPanel", .{});
+        panel.setProperty("allowsMultipleSelection", true);
         const response = panel.msgSend(usize, "runModal", .{});
         // const application = objc.getClass("NSApplication").?.msgSend(objc.Object, "sharedApplication", .{});
         // const NSApplication = objc.getClass("NSApplication").?;
@@ -804,17 +805,10 @@ fn openFilePicker(allocator: Allocator) !std.ArrayList([:0]const u8) {
         const path = c.gtk_file_picker();
         if (path) |p| {
             try paths.append(try allocator.dupeZ(u8, std.mem.span(p)));
+            c.g_free(p);
         }
-        // if (c.gtk_init_check(null, null) == 0) {
-        //     unreachable;
-        // }
-        // const dialog = c.gtk_file_chooser_dialog_new("Open DTB", null, c.GTK_FILE_CHOOSER_ACTION_OPEN, "_Cancel", c.GTK_RESPONSE_CANCEL, "_Open", c.GTK_RESPONSE_ACCEPT);
-        // std.debug.assert(dialog != null);
-
-        // if (c.gtk_dialog_run(c.gtk_widget_to_dialog(dialog)) == c.GTK_RESPONSE_ACCEPT) {
-        //     _ = c.gtk_file_chooser_get_filename(c.gtk_widget_to_file_chooser(dialog));
-        //     // std.debug.print("path {s}\n", .{ std.mem.span(path) });
-        // }
+    } else {
+        @compileError("unknown OS");
     }
 
     return paths;
@@ -1090,7 +1084,7 @@ pub fn main() !void {
                 if (c.igMenuItem_Bool("Close", SUPER_KEY_STR ++ " + W", false, true)) {
                     close = true;
                 }
-                if (c.igMenuItem_Bool("Close All", null, false, true)) {
+                if (c.igMenuItem_Bool("Close All", SUPER_KEY_STR ++ " + SHIFT + W", false, true)) {
                     close_all = true;
                 }
                 c.igSeparator();
@@ -1158,6 +1152,10 @@ pub fn main() !void {
         }
 
         if (close or c.igIsKeyChordPressed_Nil(c.ImGuiMod_Ctrl | c.ImGuiKey_W)) {
+            if (state.platforms.items.len == 0) {
+                exit = true;
+            }
+
             if (state.getPlatform()) |p| {
                 // TODO: a bit weird that we are using path here instead of index?
                 state.unloadPlatform(p.path);
@@ -1180,6 +1178,7 @@ pub fn main() !void {
         }
 
         if (exit) {
+            // TODO: need to actually deallocate everything first
             std.process.exit(0);
         }
 
