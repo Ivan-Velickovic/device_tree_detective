@@ -5,7 +5,7 @@
     .minimum_zig_version = "0.14.0",
     .dependencies = .{
         .cimgui = .{
-            .path = "./cimgui",
+            .path = "./vendor/cimgui",
         },
         .dtb = .{
             .url = "https://github.com/Ivan-Velickovic/dtb.zig/archive/1b95bdbe9c519a3627c11284a641372987df8425.tar.gz",
