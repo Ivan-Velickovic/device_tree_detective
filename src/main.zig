@@ -31,6 +31,9 @@ const ABOUT = std.fmt.comptimePrint("DTB viewer v{s}", .{ VERSION });
 
 const SUPER_KEY_STR = if (builtin.os.tag == .macos) "CMD" else "CTRL";
 
+const linux_driver_compatible_txt = @embedFile("linux_compatible_list.txt");
+const linux_dt_binding_compatible_txt = @embedFile("dt_bindings_list.txt");
+const uboot_driver_compatible_txt = @embedFile("uboot_compatible_list.txt");
 const font: [:0]const u8 = @embedFile("assets/fonts/inter/Inter-Medium.ttf");
 const logo: [:0]const u8 = @embedFile("assets/icons/macos.png");
 
@@ -133,13 +136,16 @@ const SavedState = struct {
     };
 
     fn createEmpty(allocator: Allocator, path: []const u8, file: std.fs.File) error{OutOfMemory}!SavedState {
-        return .{
+        var s: SavedState = .{
             .allocator = allocator,
             .path = path,
             .file = file,
             .parsed = null,
             .recently_opened = std.ArrayList([:0]const u8).init(allocator),
         };
+        s.save() catch @panic("todo");
+
+        return s;
     }
 
     pub fn create(allocator: Allocator, path: []const u8) error{OutOfMemory}!SavedState {
@@ -711,15 +717,11 @@ fn readFileFull(allocator: Allocator, path: []const u8) ![]const u8 {
 }
 
 const CompatibleMap = struct {
-    allocator: Allocator,
-    // This map will point to data in the file bytes, therefore 'bytes'
+    // This map will point to data in the file bytes, therefore the given bytes
     // must be valid as long as the map.
     map: std.StringHashMap([]const u8),
-    bytes: []const u8,
 
-    pub fn create(allocator: Allocator, path: []const u8) !CompatibleMap {
-        const bytes = try readFileFull(allocator, path);
-
+    pub fn create(allocator: Allocator, bytes: []const u8) !CompatibleMap {
         var map = std.StringHashMap([]const u8).init(allocator);
         var iterator = std.mem.splitScalar(u8, bytes, '\n');
         while (iterator.next()) |line| {
@@ -736,14 +738,11 @@ const CompatibleMap = struct {
         }
 
         return .{
-            .allocator = allocator,
-            .bytes = bytes,
             .map = map,
         };
     }
 
     pub fn deinit(compatible: *CompatibleMap) void {
-        compatible.allocator.free(compatible.bytes);
         compatible.map.deinit();
     }
 };
@@ -921,27 +920,40 @@ pub fn main() !void {
     // var dts = try decompileDtb(allocator, init_platform.path);
     // defer dts.deinit(allocator);
 
-    // TODO: probably make a struct that has it's own init/deinit and includes the map
-    var linux_driver_compatible = try CompatibleMap.create(allocator, "linux_compatible_list.txt");
+    var linux_driver_compatible = try CompatibleMap.create(allocator, linux_driver_compatible_txt);
     defer linux_driver_compatible.deinit();
-    var linux_dt_binding_compatible = try CompatibleMap.create(allocator, "dt_bindings_list.txt");
+    var linux_dt_binding_compatible = try CompatibleMap.create(allocator, linux_dt_binding_compatible_txt);
     defer linux_dt_binding_compatible.deinit();
-    var uboot_driver_compatible = try CompatibleMap.create(allocator, "uboot_compatible_list.txt");
+    var uboot_driver_compatible = try CompatibleMap.create(allocator, uboot_driver_compatible_txt);
     defer uboot_driver_compatible.deinit();
 
-    const sel4_example_dtbs = try exampleDtbs(allocator, "dtbs/sel4");
-    defer {
-        for (sel4_example_dtbs.items) |d| {
-            allocator.free(d);
+    const sel4_example_dtbs: ?std.ArrayList([:0]const u8) = exampleDtbs(allocator, "dtbs/sel4") catch |e| blk: {
+        switch (e) {
+            error.FileNotFound => break :blk null,
+            else => @panic("todo"),
         }
-        sel4_example_dtbs.deinit();
+    };
+    defer {
+        if (sel4_example_dtbs) |list| {
+            for (list.items) |d| {
+                allocator.free(d);
+            }
+            list.deinit();
+        }
     }
-    const linux_example_dtbs = try exampleDtbs(allocator, "dtbs/linux");
-    defer {
-        for (linux_example_dtbs.items) |d| {
-            allocator.free(d);
+    const linux_example_dtbs: ?std.ArrayList([:0]const u8) = exampleDtbs(allocator, "dtbs/linux") catch |e| blk: {
+        switch (e) {
+            error.FileNotFound => break :blk null,
+            else => @panic("todo"),
         }
-        linux_example_dtbs.deinit();
+    };
+    defer {
+        if (linux_example_dtbs) |list| {
+            for (list.items) |d| {
+                allocator.free(d);
+            }
+            list.deinit();
+        }
     }
 
     // var procs: gl.ProcTable = undefined;
@@ -1105,21 +1117,25 @@ pub fn main() !void {
                 }
                 c.igSeparator();
                 if (c.igBeginMenu("Example DTBs", true)) {
-                    if (c.igBeginMenu("seL4", true)) {
-                        for (sel4_example_dtbs.items) |example| {
-                            if (c.igMenuItem_Bool(example, null, false, true)) {
-                                dtb_to_load = example;
+                    if (sel4_example_dtbs) |list| {
+                        if (c.igBeginMenu("seL4", true)) {
+                            for (list.items) |example| {
+                                if (c.igMenuItem_Bool(example, null, false, true)) {
+                                    dtb_to_load = example;
+                                }
                             }
+                            c.igEndMenu();
                         }
-                        c.igEndMenu();
                     }
-                    if (c.igBeginMenu("Linux", true)) {
-                        for (linux_example_dtbs.items) |example| {
-                            if (c.igMenuItem_Bool(example, null, false, true)) {
-                                dtb_to_load = example;
+                    if (linux_example_dtbs) |list| {
+                        if (c.igBeginMenu("Linux", true)) {
+                            for (list.items) |example| {
+                                if (c.igMenuItem_Bool(example, null, false, true)) {
+                                    dtb_to_load = example;
+                                }
                             }
+                            c.igEndMenu();
                         }
-                        c.igEndMenu();
                     }
                     c.igEndMenu();
                 }
@@ -1255,18 +1271,19 @@ pub fn main() !void {
                 try nodeNamesFmt(node, writer);
                 try writer.writeAll("\x00");
                 c.igText(node_name.items[0..node_name.items.len - 1:0]);
-                if (node.prop(.Compatible)) |compatible| {
+                if (node.prop(.Compatible)) |compatibles| {
                     // TODO: do it for all compatibles, not just the first
-                    if (linux_driver_compatible.map.get(compatible[0])) |driver| {
-                        c.igText("Linux driver:");
-                        c.igSameLine(0, -1.0);
-                        const id = fmt(allocator, "{s}##linux", .{ driver });
-                        defer allocator.free(id);
-                        const url = fmt(allocator, "{s}/{s}", .{ LINUX_GITHUB, driver });
-                        defer allocator.free(url);
-                        c.igTextLinkOpenURL(id, url);
+                    c.igText("Linux driver:");
+                    for (compatibles, 0..) |compatible, i| {
+                        if (linux_driver_compatible.map.get(compatible)) |driver| {
+                            const id = fmt(allocator, "{s}##linux-{}", .{ driver, i });
+                            defer allocator.free(id);
+                            const url = fmt(allocator, "{s}/{s}", .{ LINUX_GITHUB, driver });
+                            defer allocator.free(url);
+                            c.igTextLinkOpenURL(id, url);
+                        }
                     }
-                    if (linux_dt_binding_compatible.map.get(compatible[0])) |driver| {
+                    if (linux_dt_binding_compatible.map.get(compatibles[0])) |driver| {
                         c.igText("Linux device tree bindings:");
                         c.igSameLine(0, -1.0);
                         const id = fmt(allocator, "{s}##linux-dt-bindings", .{ driver });
@@ -1275,7 +1292,7 @@ pub fn main() !void {
                         defer allocator.free(url);
                         c.igTextLinkOpenURL(id, url);
                     }
-                    if (uboot_driver_compatible.map.get(compatible[0])) |driver| {
+                    if (uboot_driver_compatible.map.get(compatibles[0])) |driver| {
                         c.igText("U-Boot driver:");
                         c.igSameLine(0, -1.0);
                         const id = fmt(allocator, "{s}##uboot", .{ driver });
@@ -1356,7 +1373,7 @@ pub fn main() !void {
             // No platform, show welcome splash screen.
             c.igSetNextWindowPos(state.windowPos(0.5, 0.5), 0, .{ .x = 0.5, .y = 0.5 });
             _ = c.igBegin("Welcome", null, c.ImGuiWindowFlags_NoCollapse | c.ImGuiWindowFlags_NoResize | c.ImGuiWindowFlags_NoTitleBar);
-            c.igSetWindowSize_Vec2(state.windowSize(0.3, 0.3), 0);
+            c.igSetWindowSize_Vec2(state.windowSize(0.5, 0.5), 0);
             c.igText("DTB viewer");
             if (c.igButton("Open DTB file", .{})) {
                 try handleFileDialogue(allocator, &state, &saved_state);

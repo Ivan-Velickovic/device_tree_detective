@@ -25,6 +25,9 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("dtb", dtb_mod);
 
     const assets = .{
+        "linux_compatible_list.txt",
+        "dt_bindings_list.txt",
+        "uboot_compatible_list.txt",
         "assets/fonts/inter/Inter-Medium.ttf",
         "assets/icons/macos.png",
     };
