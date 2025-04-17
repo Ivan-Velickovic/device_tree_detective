@@ -27,6 +27,7 @@
             zig
             gtk3
             glfw
+            pkg-config
           ];
         };
       });
