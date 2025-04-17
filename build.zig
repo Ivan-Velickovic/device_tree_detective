@@ -88,7 +88,6 @@ pub fn build(b: *std.Build) void {
         "-DIMGUI_DISABLE_OBSOLETE_FUNCTIONS=1",
         "-DIMGUI_IMPL_API=extern \"C\" ",
         "-DIMGUI_IMPL_OPENGL_LOADER_GL3W",
-        "-Dcimgui_EXPORTS"
     };
     exe.linkLibCpp(); // Dear Imgui uses C++ standard library
 
