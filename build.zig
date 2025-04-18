@@ -22,6 +22,7 @@ pub fn build(b: *std.Build) void {
         .root_module = exe_mod,
     });
     exe.addIncludePath(b.path("include"));
+    exe.addIncludePath(b.path("vendor/stb_image"));
     exe.root_module.addImport("dtb", dtb_mod);
 
     const assets = .{
