@@ -25,9 +25,7 @@ const c = @cImport({
     }
 });
 
-// TODO: get this from build.zig.zon instead
-const VERSION = "0.1.0";
-const ABOUT = std.fmt.comptimePrint("Device Tree Detective v{s}", .{ VERSION });
+const ABOUT = std.fmt.comptimePrint("Device Tree Detective v{s}", .{ zon.version });
 
 const SUPER_KEY_STR = if (builtin.os.tag == .macos) "CMD" else "CTRL";
 
@@ -36,6 +34,24 @@ const linux_dt_binding_compatible_txt = @embedFile("dt_bindings_list.txt");
 const uboot_driver_compatible_txt = @embedFile("uboot_compatible_list.txt");
 const font: [:0]const u8 = @embedFile("assets/fonts/inter/Inter-Medium.ttf");
 const logo: [:0]const u8 = @embedFile("assets/icons/macos.png");
+
+// In the current version fo Zig (0.14.0), we cannot import build.zig.zon without a
+// explicit result type. https://github.com/ziglang/zig/pull/22907 fixes this, but
+// until 0.15.0 of Zig is released, we must do this.
+const zon: struct {
+    name: enum { device_tree_detective },
+    version: []const u8,
+    fingerprint: u64,
+    minimum_zig_version: []const u8,
+    dependencies: struct {
+        cimgui: struct { path: []const u8 },
+        dtb: Dependency,
+        objc: Dependency,
+    },
+    paths: []const []const u8,
+
+    const Dependency = struct { url: []const u8, hash: []const u8, lazy: bool = false };
+} = @import("build.zig.zon");
 
 /// Note that this must match to cimgui.h definition of ImGuiCol_.
 /// I could have just used the C bindings but for convenience I made the
@@ -879,6 +895,8 @@ const Args = struct {
 };
 
 pub fn main() !void {
+    log.info("starting Device Tree Detective version {s}", .{ zon.version });
+
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
     defer {
@@ -1380,6 +1398,13 @@ pub fn main() !void {
             }
 
             c.igText("Recently opened");
+            if (c.igButton("Clear items", .{})) {
+                for (saved_state.recently_opened.items) |p| {
+                    saved_state.allocator.free(p);
+                }
+                saved_state.recently_opened.clearAndFree();
+                try saved_state.save();
+            }
             var selected_item: ?usize = null;
             if (c.igBeginTable("##recent-dtbs", 1, 0, .{}, 0.0)) {
                 for (saved_state.recently_opened.items, 0..) |r, i| {

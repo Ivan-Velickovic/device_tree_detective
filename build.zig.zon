@@ -1,7 +1,7 @@
 .{
-    .name = .dtb_viewer,
-    .version = "0.1.0",
-    .fingerprint = 0x63046dcb78483a07, // Changing this has security and trust implications.
+    .name = .device_tree_detective,
+    .version = "1.0.0",
+    .fingerprint = 0x671e14f9a7b8e41a, // Changing this has security and trust implications.
     .minimum_zig_version = "0.14.0",
     .dependencies = .{
         .cimgui = .{
