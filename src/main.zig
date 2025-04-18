@@ -27,7 +27,7 @@ const c = @cImport({
 
 // TODO: get this from build.zig.zon instead
 const VERSION = "0.1.0";
-const ABOUT = std.fmt.comptimePrint("DTB viewer v{s}", .{ VERSION });
+const ABOUT = std.fmt.comptimePrint("Device Tree Detective v{s}", .{ VERSION });
 
 const SUPER_KEY_STR = if (builtin.os.tag == .macos) "CMD" else "CTRL";
 
@@ -833,9 +833,9 @@ fn openFilePicker(allocator: Allocator) !std.ArrayList([:0]const u8) {
 }
 
 const usage_text =
-    \\usage: dtb_viewer [-h|--help] [DTB PATHS ...]
+    \\usage: dtd [-h|--help] [DTB PATHS ...]
     \\
-    \\Open DTB viewer via the command line.
+    \\Open Device Tree Detective via the command line.
     \\Pass list of paths to DTBs to open first.
     \\
 ;
@@ -977,7 +977,7 @@ pub fn main() !void {
         c.glfwWindowHint(c.GLFW_OPENGL_FORWARD_COMPAT, c.GL_TRUE);
     }
 
-    const window = c.glfwCreateWindow(1920, 1080, "DTB viewer", null, null);
+    const window = c.glfwCreateWindow(1920, 1080, "Device Tree Detective", null, null);
     if (window == null) {
         return;
     }
@@ -1083,11 +1083,11 @@ pub fn main() !void {
         c.glfwPollEvents();
 
         if (state.getPlatform()) |platform| {
-            const window_title = fmt(allocator, "{s} - DTB viewer", .{ platform.path });
+            const window_title = fmt(allocator, "{s} - Device Tree Detective", .{ platform.path });
             defer allocator.free(window_title);
             c.glfwSetWindowTitle(window, window_title);
         } else {
-            c.glfwSetWindowTitle(window, "DTB viewer");
+            c.glfwSetWindowTitle(window, "Device Tree Detective");
         }
 
         c.ImGui_ImplOpenGL3_NewFrame();
@@ -1374,7 +1374,7 @@ pub fn main() !void {
             c.igSetNextWindowPos(state.windowPos(0.5, 0.5), 0, .{ .x = 0.5, .y = 0.5 });
             _ = c.igBegin("Welcome", null, c.ImGuiWindowFlags_NoCollapse | c.ImGuiWindowFlags_NoResize | c.ImGuiWindowFlags_NoTitleBar);
             c.igSetWindowSize_Vec2(state.windowSize(0.5, 0.5), 0);
-            c.igText("DTB viewer");
+            c.igText("Device Tree Detective");
             if (c.igButton("Open DTB file", .{})) {
                 try handleFileDialogue(allocator, &state, &saved_state);
             }
