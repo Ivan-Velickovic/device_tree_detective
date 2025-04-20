@@ -22,13 +22,18 @@
         devShells.default = pkgs.mkShell rec {
           name = "dev-shell";
 
+          osPkgs = with pkgs; {
+            aarch64-darwin = [];
+            x86_64-darwin = [];
+            x86_64-linux = [ gtk3 glibc ];
+            aarch64-linux = [ gtk3 glibc ];
+          }.${system} or (throw "Unsupported system: ${system}");
+
           nativeBuildInputs = with pkgs; [
-            glibc
             zig
-            gtk3
             glfw
             pkg-config
-          ];
+          ] ++ osPkgs;
         };
       });
 }
