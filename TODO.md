@@ -1,11 +1,11 @@
 ## Main work
 
 * [ ] CPU info display
-* [ ] Opening files via file picker
 * [ ] Splash/welcome screen
 * [ ] Finish tree view
 * [ ] Better IRQ view
 * [ ] Better memory view, introduce memory map probably
+* [x] Opening files via file picker
 
 ## Improvements and QoL
 
@@ -45,6 +45,8 @@
       coressponding device
 * [ ] check compatible map, arm,cortex-a55 was coming with imx uboot cpu driver
 * [ ] some colours are still messed up
+* [ ] Window/Dock icon needs to be sorted out on a per-OS basis.
+    * [ ] On Linux, alt-tab does not show the icon, but the dock shows the icon
 
 ```
 : GLFW Error '65544'': Cocoa: Failed to query display mode

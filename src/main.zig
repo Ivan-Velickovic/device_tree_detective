@@ -851,7 +851,7 @@ fn openFilePicker(allocator: Allocator) !std.ArrayList([:0]const u8) {
             try paths.append(path);
         }
     } else {
-        @compileError("unknown OS");
+        @compileError("unknown OS for file picker");
     }
 
     return paths;
@@ -943,10 +943,6 @@ pub fn main() !void {
         state.setPlatform(args.paths.getLast());
     }
 
-    // TODO
-    // var dts = try decompileDtb(allocator, init_platform.path);
-    // defer dts.deinit(allocator);
-
     var linux_driver_compatible = try CompatibleMap.create(allocator, linux_driver_compatible_txt);
     defer linux_driver_compatible.deinit();
     var linux_dt_binding_compatible = try CompatibleMap.create(allocator, linux_dt_binding_compatible_txt);
@@ -1004,6 +1000,8 @@ pub fn main() !void {
         c.glfwWindowHint(c.GLFW_OPENGL_FORWARD_COMPAT, c.GL_TRUE);
     }
 
+    // TODO: window size needs to be figured out better, need to just make it full screen
+    // on small screens and half size on large screens?
     const window = c.glfwCreateWindow(1920, 1080, "Device Tree Detective", null, null);
     if (window == null) {
         return;
