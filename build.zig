@@ -53,6 +53,14 @@ pub fn build(b: *std.Build) void {
                 exe.root_module.addImport("objc", objc_dep.module("objc"));
             }
         },
+        .windows => {
+            exe.addLibraryPath(.{ .cwd_relative = "glfw-3.4.bin.WIN64/glfw-3.4.bin.WIN64/lib-mingw-w64" });
+            exe.addIncludePath(.{ .cwd_relative = "glfw-3.4.bin.WIN64/glfw-3.4.bin.WIN64/include" });
+            exe.linkSystemLibrary("opengl32");
+            exe.linkSystemLibrary2("glfw3", .{ .preferred_link_mode = .static });
+            exe.linkSystemLibrary("gdi32");
+            exe.linkSystemLibrary("imm32");
+        },
         .linux => {
             exe.linkSystemLibrary("GL");
             exe.linkSystemLibrary("X11");

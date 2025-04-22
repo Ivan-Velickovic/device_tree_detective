@@ -841,6 +841,8 @@ fn openFilePicker(allocator: Allocator) !std.ArrayList([:0]const u8) {
             try paths.append(try allocator.dupeZ(u8, std.mem.span(p)));
             c.g_free(p);
         }
+    } else if (builtin.os.tag == .windows) {
+        // TODO
     } else {
         @compileError("unknown OS");
     }
@@ -985,7 +987,7 @@ pub fn main() !void {
 
     const GLSL_VERSION = comptime switch (builtin.os.tag) {
         .macos => "#version 150",
-        .linux => "#version 130",
+        .linux, .windows => "#version 130",
         else => @compileError("unknown GLSL version for OS"),
     };
     c.glfwWindowHint(c.GLFW_CONTEXT_VERSION_MAJOR, 3);
