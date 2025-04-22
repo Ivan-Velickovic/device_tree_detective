@@ -60,6 +60,7 @@ pub fn build(b: *std.Build) void {
             exe.linkSystemLibrary2("glfw3", .{ .preferred_link_mode = .static });
             exe.linkSystemLibrary("gdi32");
             exe.linkSystemLibrary("imm32");
+            exe.linkSystemLibrary("Ole32");
         },
         .linux => {
             exe.linkSystemLibrary("GL");
@@ -88,6 +89,9 @@ pub fn build(b: *std.Build) void {
     exe.addCSourceFile(.{ .file = b.path("src/ig_extern.c") });
     if (target.result.os.tag == .linux) {
         exe.addCSourceFile(.{ .file = b.path("src/gtk_extern.c") });
+    }
+    if (target.result.os.tag == .windows) {
+        exe.addCSourceFile(.{ .file = b.path("src/windows_dialog.cpp") });
     }
 
     const cpp_flags: []const []const u8 = &[_][]const u8

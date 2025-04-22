@@ -23,6 +23,9 @@ const c = @cImport({
         @cInclude("gtk/gtk.h");
         @cInclude("gtk_extern.h");
     }
+    if (builtin.os.tag == .windows) {
+        @cInclude("windows_dialog.h");
+    }
 });
 
 const ABOUT = std.fmt.comptimePrint("Device Tree Detective v{s}", .{ zon.version });
@@ -842,7 +845,11 @@ fn openFilePicker(allocator: Allocator) !std.ArrayList([:0]const u8) {
             c.g_free(p);
         }
     } else if (builtin.os.tag == .windows) {
-        // TODO
+        const utf16_path = c.windows_file_picker();
+        if (utf16_path) |p| {
+            const path = try std.unicode.utf16LeToUtf8AllocZ(allocator, std.mem.span(p));
+            try paths.append(path);
+        }
     } else {
         @compileError("unknown OS");
     }
