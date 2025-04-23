@@ -35,6 +35,23 @@ pub fn isCompatible(device_compatibles: []const []const u8, compatibles: []const
     return false;
 }
 
+pub fn nodeNameFullPath(bytes: *std.ArrayList(u8), node: *dtb.Node) ![:0]const u8 {
+    const writer = bytes.writer();
+    try nodeNamesFmt(node, writer);
+    try writer.writeAll("\x00");
+
+    return bytes.items[0..bytes.items.len - 1:0];
+}
+
+fn nodeNamesFmt(node: *dtb.Node, writer: std.ArrayList(u8).Writer) !void {
+    if (node.parent) |parent| {
+        try nodeNamesFmt(parent, writer);
+        try writer.writeAll("/");
+    }
+
+    try writer.writeAll(node.name);
+}
+
 pub fn memory(d: *dtb.Node) ?*dtb.Node {
     for (d.children) |child| {
         const device_type = child.prop(.DeviceType);

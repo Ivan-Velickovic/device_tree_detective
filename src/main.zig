@@ -5,6 +5,14 @@ const Allocator = std.mem.Allocator;
 const ArrayList = std.ArrayList;
 const log = std.log;
 
+comptime {
+    // Zig has many breaking changes between minor releases so it is important that
+    // we check the user has the right version.
+    if (!(builtin.zig_version.major == 0 and builtin.zig_version.minor == 14)) {
+        @compileError("expected Zig version 0.14.x to be used, you have " ++ builtin.zig_version_string);
+    }
+}
+
 const objc = if (builtin.os.tag == .macos) @import("objc") else null;
 
 const c = @cImport({
@@ -32,9 +40,9 @@ const ABOUT = std.fmt.comptimePrint("Device Tree Detective v{s}", .{ zon.version
 
 const SUPER_KEY_STR = if (builtin.os.tag == .macos) "CMD" else "CTRL";
 
-const linux_driver_compatible_txt = @embedFile("linux_compatible_list.txt");
-const linux_dt_binding_compatible_txt = @embedFile("dt_bindings_list.txt");
-const uboot_driver_compatible_txt = @embedFile("uboot_compatible_list.txt");
+const linux_driver_compatible_txt = @embedFile("assets/maps/linux_compatible_list.txt");
+const linux_dt_binding_compatible_txt = @embedFile("assets/maps/dt_bindings_list.txt");
+const uboot_driver_compatible_txt = @embedFile("assets/maps/uboot_compatible_list.txt");
 const font: [:0]const u8 = @embedFile("assets/fonts/inter/Inter-Medium.ttf");
 const logo: [:0]const u8 = @embedFile("assets/icons/macos.png");
 
@@ -485,6 +493,7 @@ const Platform = struct {
     regions: std.ArrayList(Platform.Region),
     main_memory: ?MainMemory,
     irqs: std.ArrayList(Irq),
+    irq_controllers: std.ArrayList(*dtb.Node),
     model_str: [:0]const u8,
     // cpus: ?ArrayList(Cpu),
 
@@ -556,6 +565,9 @@ const Platform = struct {
         var regions = std.ArrayList(Region).init(allocator);
         try regionsAdd(root, &regions);
 
+        var irq_controllers = std.ArrayList(*dtb.Node).init(allocator);
+        try irqControllers(root, &irq_controllers);
+
         return .{
             .allocator = allocator,
             .dtb_bytes = dtb_bytes,
@@ -564,6 +576,7 @@ const Platform = struct {
             .model = root.prop(.Model),
             .main_memory = main_memory,
             .irqs = try irqList(allocator, root),
+            .irq_controllers = irq_controllers,
             .regions = regions,
             .model_str = model_str,
         };
@@ -577,6 +590,7 @@ const Platform = struct {
         }
         allocator.free(platform.path);
         platform.irqs.deinit();
+        platform.irq_controllers.deinit();
         platform.regions.deinit();
         platform.root.deinit(allocator);
         if (platform.model != null){
@@ -600,15 +614,6 @@ fn regionsAdd(node: *dtb.Node, regions: *std.ArrayList(Platform.Region)) !void {
             });
         }
     }
-}
-
-fn nodeNamesFmt(node: *dtb.Node, writer: std.ArrayList(u8).Writer) !void {
-    if (node.parent) |parent| {
-        try nodeNamesFmt(parent, writer);
-        try writer.writeAll("/");
-    }
-
-    try writer.writeAll(node.name);
 }
 
 fn irqListAdd(nodes: []*dtb.Node, irqs: *std.ArrayList(Irq)) !void {
@@ -651,17 +656,29 @@ fn irqList(allocator: Allocator, root: *dtb.Node) !std.ArrayList(Irq) {
     return irqs;
 }
 
-fn nodeTree(allocator: Allocator, nodes: []*dtb.Node, curr_highlighted_node: ?*dtb.Node, expand_all: bool) !?*dtb.Node {
+fn irqControllers(node: *dtb.Node, irq_controllers: *std.ArrayList(*dtb.Node)) !void {
+    if (node.prop(.InterruptController)) |_| {
+        try irq_controllers.append(node);
+    }
+    for (node.children) |child| {
+        try irqControllers(child, irq_controllers);
+    }
+}
+
+fn nodeTree(allocator: Allocator, filter: *c.ImGuiTextFilter, nodes: []*dtb.Node, curr_highlighted_node: ?*dtb.Node, expand_all: bool) !?*dtb.Node {
     var highlighted_node: ?*dtb.Node = curr_highlighted_node;
     for (nodes) |node| {
-        const c_name = try allocator.allocSentinel(u8, node.name.len, 0);
-        defer allocator.free(c_name);
-        @memcpy(c_name, node.name);
-        var flags = c.ImGuiTreeNodeFlags_AllowOverlap | c.ImGuiTreeNodeFlags_SpanFullWidth;
-        if (expand_all) {
-            flags |= c.ImGuiTreeNodeFlags_DefaultOpen;
+        const name = try allocator.dupeZ(u8, node.name);
+        defer allocator.free(name);
+
+        if (!c.ImGuiTextFilter_PassFilter(filter, name, null)) {
+            highlighted_node = try nodeTree(allocator, filter, node.children, highlighted_node, expand_all);
+            continue;
         }
-        if (c.igTreeNodeEx_Str(c_name.ptr, flags)) {
+
+        const flags = c.ImGuiTreeNodeFlags_AllowOverlap | c.ImGuiTreeNodeFlags_SpanFullWidth;
+        c.igSetNextItemOpen(expand_all, c.ImGuiCond_None);
+        if (c.igTreeNodeEx_Str(name, flags)) {
             // TODO: maybe want better hover flags
             if (c.igIsItemToggledOpen()) {
                 highlighted_node = node;
@@ -718,7 +735,7 @@ fn nodeTree(allocator: Allocator, nodes: []*dtb.Node, curr_highlighted_node: ?*d
                 }
             }
             if (node.children.len != 0) {
-                highlighted_node = try nodeTree(allocator, node.children, highlighted_node, expand_all);
+                highlighted_node = try nodeTree(allocator, filter, node.children, highlighted_node, expand_all);
             }
             c.igTreePop();
         }
@@ -905,6 +922,8 @@ const Args = struct {
 
 pub fn main() !void {
     log.info("starting Device Tree Detective version {s}", .{ zon.version });
+    log.info("compiled with Zig {s}", .{ builtin.zig_version_string });
+    log.info("GLFW version {s}", .{ c.glfwGetVersionString() });
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
@@ -1103,7 +1122,6 @@ pub fn main() !void {
     // ===== Styling End =======
 
     // TODO: move this into platform struct
-    var nodes_expand_all = false;
     while (c.glfwWindowShouldClose(window) != c.GLFW_TRUE) {
         c.glfwPollEvents();
 
@@ -1229,7 +1247,6 @@ pub fn main() !void {
 
         // We have a DTB to load, but it might already be the current one.
         if (dtb_to_load) |d| {
-            nodes_expand_all = false;
             try state.loadPlatform(&saved_state, d);
             state.setPlatform(d);
         }
@@ -1275,13 +1292,20 @@ pub fn main() !void {
             const expand_all = c.igButton("Expand All", .{});
             c.igSameLine(0, -1.0);
             const collapse_all = c.igButton("Collapse All", .{});
-            if (!nodes_expand_all) {
-                nodes_expand_all = expand_all;
-            } else if (collapse_all) {
-                nodes_expand_all = false;
+            var nodes_open: ?bool = null;
+
+            if (expand_all) {
+                nodes_open = true;
+            }
+            if (collapse_all) {
+                nodes_open = false;
             }
 
-            state.highlighted_node = try nodeTree(allocator, platform.root.children, state.highlighted_node, nodes_expand_all);
+            const filter = c.ImGuiTextFilter_ImGuiTextFilter(null);
+            defer c.ImGuiTextFilter_destroy(filter);
+
+            _ = c.ImGuiTextFilter_Draw(filter, "tree-filter", 0);
+            state.highlighted_node = try nodeTree(allocator, filter, platform.root.children, state.highlighted_node, nodes_open orelse false);
             c.igEnd();
 
             // === Selected Node Window ===
@@ -1290,12 +1314,15 @@ pub fn main() !void {
             _ = c.igBegin("Selected Node", null, c.ImGuiWindowFlags_NoCollapse | c.ImGuiWindowFlags_NoResize);
             c.igSetWindowSize_Vec2(state.windowSize(0.5, 0.5), 0);
             if (state.highlighted_node) |node| {
-                var node_name = std.ArrayList(u8).init(allocator);
-                defer node_name.deinit();
-                const writer = node_name.writer();
-                try nodeNamesFmt(node, writer);
-                try writer.writeAll("\x00");
-                c.igText(node_name.items[0..node_name.items.len - 1:0]);
+                var name_bytes = std.ArrayList(u8).init(allocator);
+                defer name_bytes.deinit();
+                const node_name = try dtb.nodeNameFullPath(&name_bytes, node);
+                c.igText(node_name);
+                if (node.interruptParent()) |irq_parent| {
+                    if (c.igButton("Go to IRQ parent", .{})) {
+                        state.highlighted_node = irq_parent;
+                    }
+                }
                 if (node.prop(.Compatible)) |compatibles| {
                     // TODO: do it for all compatibles, not just the first
                     c.igText("Linux driver:");
@@ -1372,12 +1399,51 @@ pub fn main() !void {
                     c.igEndTabItem();
                 }
                 if (c.igBeginTabItem("Interrupts", null, c.ImGuiTabItemFlags_None)) {
-                    var buf = [_:0]u8{0} ** 100;
-                    _ = c.igInputText("input text", &buf, buf.len, 0, null, null);
-                    for (platform.irqs.items) |irq| {
-                        const irq_fmt = fmt(allocator, "{d} (0x{x}), {s}", .{ irq.number, irq.number, irq.node.name });
-                        defer allocator.free(irq_fmt);
-                        c.igText(irq_fmt);
+                    if (c.igBeginTabBar("Views", c.ImGuiTabBarFlags_None)) {
+                        if (c.igBeginTabItem("List", null, c.ImGuiTabItemFlags_None)) {
+                            const irq_filter = c.ImGuiTextFilter_ImGuiTextFilter(null);
+                            defer c.ImGuiTextFilter_destroy(irq_filter);
+
+                            _ = c.ImGuiTextFilter_Draw(irq_filter, "interrupts-filter", 0);
+                            for (platform.irqs.items) |irq| {
+                                const irq_fmt = fmt(allocator, "{d} (0x{x}), {s}", .{ irq.number, irq.number, irq.node.name });
+                                defer allocator.free(irq_fmt);
+                                if (c.ImGuiTextFilter_PassFilter(irq_filter, irq_fmt, null)) {
+                                    c.igText(irq_fmt);
+                                }
+                            }
+                            c.igEndTabItem();
+                        }
+                        if (c.igBeginTabItem("Canvas?", null, c.ImGuiTabItemFlags_None)) {
+                            const draw_list = c.igGetWindowDrawList();
+                            var canvas_p0: c.ImVec2 = undefined;
+                            c.igGetCursorScreenPos(&canvas_p0);
+
+                            const canvas_sz: c.ImVec2 = .{ .x = 500.0, .y = 200.0 };
+                            const canvas_p1: c.ImVec2 = .{ .x = canvas_p0.x + canvas_sz.x, .y = canvas_p0.y + canvas_sz.y };
+                            c.ImDrawList_AddRectFilled(draw_list, canvas_p0, canvas_p1, 0xffaaaaaa, 0, 0);
+                            // c.ImDrawList_AddRect(draw_list, canvas_p0, canvas_p1, 0xff000000, 0, 0);
+
+                            for (platform.irq_controllers.items, 0..) |irq_controller, i| {
+                                const p0: c.ImVec2 = .{ .x = canvas_p0.x + 10, .y = canvas_p0.y + 10 + (75 * @as(f32, @floatFromInt(i))) };
+                                const size: c.ImVec2 = .{ .x = 130, .y = 50 };
+                                const p1: c.ImVec2 = .{ .x = p0.x + size.x, .y = p0.y + size.y };
+                                c.ImDrawList_AddRectFilled(draw_list, p0, p1, 0xffdddddd, 0, 0);
+                                var name_bytes = std.ArrayList(u8).init(allocator);
+                                defer name_bytes.deinit();
+                                const name = try dtb.nodeNameFullPath(&name_bytes, irq_controller);
+                                c.ImDrawList_AddText_Vec2(draw_list, .{ .x = p0.x + 10, .y = p0.y + 20 }, 0xff000000, name, null);
+
+                                // TODO:
+                                // 1. Get every IRQ that is attached 
+                                const start: c.ImVec2 = .{ .x = p0.x + size.x , .y = p0.y + 25 };
+                                const end: c.ImVec2 = .{ .x = start.x + 100, .y = start.y };
+                                c.ImDrawList_AddLine(draw_list, start, end, 0xff000000, 2);
+                            }
+
+                            c.igEndTabItem();
+                        }
+                        c.igEndTabBar();
                     }
                     c.igEndTabItem();
                 }
