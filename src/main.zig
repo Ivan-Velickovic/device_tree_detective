@@ -36,6 +36,7 @@ const c = @cImport({
     }
 });
 
+const EXAMPLE_DTBS = "example_dtbs";
 const ABOUT = std.fmt.comptimePrint("Device Tree Detective v{s}", .{ zon.version });
 
 const SUPER_KEY_STR = if (builtin.os.tag == .macos) "CMD" else "CTRL";
@@ -969,7 +970,7 @@ pub fn main() !void {
     var uboot_driver_compatible = try CompatibleMap.create(allocator, uboot_driver_compatible_txt);
     defer uboot_driver_compatible.deinit();
 
-    const sel4_example_dtbs: ?std.ArrayList([:0]const u8) = exampleDtbs(allocator, "dtbs/sel4") catch |e| blk: {
+    const sel4_example_dtbs: ?std.ArrayList([:0]const u8) = exampleDtbs(allocator, EXAMPLE_DTBS ++ "/sel4") catch |e| blk: {
         switch (e) {
             error.FileNotFound => break :blk null,
             else => @panic("todo"),
@@ -983,7 +984,7 @@ pub fn main() !void {
             list.deinit();
         }
     }
-    const linux_example_dtbs: ?std.ArrayList([:0]const u8) = exampleDtbs(allocator, "dtbs/linux") catch |e| blk: {
+    const linux_example_dtbs: ?std.ArrayList([:0]const u8) = exampleDtbs(allocator, EXAMPLE_DTBS ++ "/linux") catch |e| blk: {
         switch (e) {
             error.FileNotFound => break :blk null,
             else => @panic("todo"),
