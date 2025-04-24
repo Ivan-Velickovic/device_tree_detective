@@ -4,8 +4,9 @@
 * [ ] Splash/welcome screen
 * [ ] Finish tree view
 * [ ] Better IRQ view
+    * Each IRQ controller needs to know what IRQs map to it. We then draw a line for
+      each IRQ/device that is connected to the IRQ controller.
 * [ ] Better memory view, introduce memory map probably
-* [x] Opening files via file picker
 
 ## Improvements and QoL
 
@@ -19,11 +20,9 @@
     * I would need to recursively iterate through every file, read all the contents
       and then match on the pattern
 * [ ] compile DTS to DTB on demand
-* [ ] fuzzy search for nodes
-* [ ] cpu info
-* [ ] irqs top-down view/list
 * [ ] live-reload if the DTB is edited/updated?
 * [ ] multiple DTBs open at the same time via tabs
+    * [ ] almost done, just need to have proper menu for switching between tabs
 * [ ] IRQ info based on GIC etc
 * [ ] In platform info show what RISC-V extensions a CPU supports in a nice way
 * [ ] list lists of strings as a drop-down in the 'selected node' view
@@ -37,8 +36,6 @@
     * [ ] riscv,event-to-mhpmcounters
     * [ ] migrate, cpu_on, cpu_off, cpu_suspend
 * [ ] display status = disabled or status = okay nicely
-* [ ] collpase seems to have a bug where collapse all only collapses nodes that have
-      not been explictily opened by the user
 * [ ] proper logo
 * [ ] click on addresses or interrupts to copy them to clipboard
 * [ ] memory view, e.g let's say i just have an address and need to find the
@@ -47,6 +44,9 @@
 * [ ] some colours are still messed up
 * [ ] Window/Dock icon needs to be sorted out on a per-OS basis.
     * [ ] On Linux, alt-tab does not show the icon, but the dock shows the icon
+    * [ ] macOS icon is way too big
+* [ ] DTB seems to crash on certain Linux DTBs, should have a test that goes
+      through all the example DTBs and tries to parse them.
 
 ```
 : GLFW Error '65544'': Cocoa: Failed to query display mode

@@ -41,6 +41,7 @@ const ABOUT = std.fmt.comptimePrint("Device Tree Detective v{s}", .{ zon.version
 
 const SUPER_KEY_STR = if (builtin.os.tag == .macos) "CMD" else "CTRL";
 
+const riscv_isa_extensions_csv = @embedFile("assets/maps/riscv_isa_extensions.csv");
 const linux_driver_compatible_txt = @embedFile("assets/maps/linux_compatible_list.txt");
 const linux_dt_binding_compatible_txt = @embedFile("assets/maps/dt_bindings_list.txt");
 const uboot_driver_compatible_txt = @embedFile("assets/maps/uboot_compatible_list.txt");
@@ -198,6 +199,10 @@ const SavedState = struct {
 
         var recently_opened = try std.ArrayList([:0]const u8).initCapacity(allocator, parsed.value.recently_opened.len);
         for (parsed.value.recently_opened) |p| {
+            std.fs.cwd().access(p, .{}) catch |e| {
+                std.log.info("cannot access recently opened file '{s}' ({any}), dropping from list", .{ p, e });
+                continue;
+            };
             recently_opened.appendAssumeCapacity(try allocator.dupeZ(u8, p));
         }
 
@@ -408,8 +413,9 @@ fn dropCallback(_: ?*c.GLFWwindow, count: c_int, paths: [*c][*c]const u8) callco
 /// time of writing is less than 200KiB.
 const DTB_DECOMPILE_MAX_OUTPUT = 1024 * 1024 * 16;
 
-fn errorCallback(errn: c_int, str: [*c]const u8) callconv(.C) void {
-    std.log.err("GLFW Error '{}'': {s}", .{ errn, str });
+fn errorCallback(_: c_int, _: [*c]const u8) callconv(.C) void {
+    // TODO:
+    // std.log.err("GLFW Error '{}'': {s}", .{ errn, str });
 }
 
 fn fmt(allocator: Allocator, comptime s: []const u8, args: anytype) [:0]u8 {
@@ -666,24 +672,26 @@ fn irqControllers(node: *dtb.Node, irq_controllers: *std.ArrayList(*dtb.Node)) !
     }
 }
 
-fn nodeTree(allocator: Allocator, filter: *c.ImGuiTextFilter, nodes: []*dtb.Node, curr_highlighted_node: ?*dtb.Node, expand_all: bool) !?*dtb.Node {
+// fn drawIrqControllerLines(platform: *Platform, irq_controller: *dtb.Node, draw_list: *c.Im start_pos: c.ImVec2) void {
+// }
+
+fn nodeTree(allocator: Allocator, filter: *c.ImGuiTextFilter, nodes: []*dtb.Node, curr_highlighted_node: ?*dtb.Node, open: ?bool) !?*dtb.Node {
     var highlighted_node: ?*dtb.Node = curr_highlighted_node;
     for (nodes) |node| {
         const name = try allocator.dupeZ(u8, node.name);
         defer allocator.free(name);
 
         if (!c.ImGuiTextFilter_PassFilter(filter, name, null)) {
-            highlighted_node = try nodeTree(allocator, filter, node.children, highlighted_node, expand_all);
+            highlighted_node = try nodeTree(allocator, filter, node.children, highlighted_node, open);
             continue;
         }
 
         const flags = c.ImGuiTreeNodeFlags_AllowOverlap | c.ImGuiTreeNodeFlags_SpanFullWidth;
-        c.igSetNextItemOpen(expand_all, c.ImGuiCond_None);
+        if (open) |val| {
+            c.igSetNextItemOpen(val, c.ImGuiCond_None);
+        }
         if (c.igTreeNodeEx_Str(name, flags)) {
-            // TODO: maybe want better hover flags
-            if (c.igIsItemToggledOpen()) {
-                highlighted_node = node;
-            }
+
             if (node.prop(.Compatible)) |compatibles| {
                 if (c.igTreeNodeEx_Str("compatible", c.ImGuiTreeNodeFlags_DefaultOpen | c.ImGuiTreeNodeFlags_Leaf)) {
                     for (compatibles) |compatible| {
@@ -736,9 +744,12 @@ fn nodeTree(allocator: Allocator, filter: *c.ImGuiTextFilter, nodes: []*dtb.Node
                 }
             }
             if (node.children.len != 0) {
-                highlighted_node = try nodeTree(allocator, filter, node.children, highlighted_node, expand_all);
+                highlighted_node = try nodeTree(allocator, filter, node.children, highlighted_node, open);
             }
             c.igTreePop();
+        }
+        if (c.igIsItemHovered(c.ImGuiHoveredFlags_None)) {
+            highlighted_node = node;
         }
     }
 
@@ -963,6 +974,7 @@ pub fn main() !void {
         state.setPlatform(args.paths.getLast());
     }
 
+    // TODO: all these maps could actually be done at compile time
     var linux_driver_compatible = try CompatibleMap.create(allocator, linux_driver_compatible_txt);
     defer linux_driver_compatible.deinit();
     var linux_dt_binding_compatible = try CompatibleMap.create(allocator, linux_dt_binding_compatible_txt);
@@ -999,6 +1011,33 @@ pub fn main() !void {
         }
     }
 
+    var riscv_isa_extensions = std.StringHashMap([]const u8).init(allocator);
+    {
+        var iterator = std.mem.splitScalar(u8, riscv_isa_extensions_csv, '\n');
+        var i: usize = 0;
+        while (iterator.next()) |line| : (i += 1) {
+            if (i < 8) {
+                continue;
+            }
+
+            var line_split = std.mem.splitScalar(u8, line, ',');
+            // The CSV uses upper-case for the first letter of extensions, while we want
+            // lower case as that is what Device Trees use.
+            const isa_shorthand = try std.ascii.allocLowerString(allocator, line_split.first());
+            const isa_name = line_split.peek().?;
+            std.debug.assert(isa_shorthand.len != 0);
+            std.debug.assert(isa_name.len != 0);
+
+            try riscv_isa_extensions.put(isa_shorthand, isa_name);
+        }
+    }
+    defer {
+        var keys = riscv_isa_extensions.keyIterator();
+        while (keys.next()) |key| {
+            allocator.free(key.*);
+        }
+        defer riscv_isa_extensions.deinit();
+    }
     // var procs: gl.ProcTable = undefined;
 
     _ = c.glfwSetErrorCallback(errorCallback);
@@ -1306,7 +1345,7 @@ pub fn main() !void {
             defer c.ImGuiTextFilter_destroy(filter);
 
             _ = c.ImGuiTextFilter_Draw(filter, "tree-filter", 0);
-            state.highlighted_node = try nodeTree(allocator, filter, platform.root.children, state.highlighted_node, nodes_open orelse false);
+            state.highlighted_node = try nodeTree(allocator, filter, platform.root.children, state.highlighted_node, nodes_open);
             c.igEnd();
 
             // === Selected Node Window ===
@@ -1387,11 +1426,23 @@ pub fn main() !void {
                     }
                     if (platform.root.propAt(&.{ "cpus", "cpu@0" }, .RiscvIsaExtensions)) |extensions| {
                         if (c.igTreeNodeEx_Str("RISC-V ISA Extensions", c.ImGuiTreeNodeFlags_DefaultOpen)) {
+                            const isa_filter = c.ImGuiTextFilter_ImGuiTextFilter(null);
+                            defer c.ImGuiTextFilter_destroy(isa_filter);
+                            _ = c.ImGuiTextFilter_Draw(isa_filter, "extensisons-filter", 200);
+
                             for (extensions) |extension| {
-                                const c_extension = fmt(allocator, "{s}", .{ extension });
-                                defer allocator.free(c_extension);
-                                if (c.igTreeNodeEx_Str(c_extension, c.ImGuiTreeNodeFlags_Leaf)) {
-                                    c.igTreePop();
+                                const extension_fmt = blk: {
+                                    const maybe_fullname = riscv_isa_extensions.get(extension);
+                                    if (maybe_fullname) |fullname| {
+                                        break :blk fmt(allocator, "{s} ({s})", .{ extension, fullname });
+                                    } else {
+                                        break :blk fmt(allocator, "{s}", .{ extension });
+                                    }
+                                };
+                                defer allocator.free(extension_fmt);
+
+                                if (c.ImGuiTextFilter_PassFilter(isa_filter, extension_fmt, null)) {
+                                    c.igText(extension_fmt);
                                 }
                             }
                             c.igTreePop();
@@ -1416,31 +1467,73 @@ pub fn main() !void {
                             c.igEndTabItem();
                         }
                         if (c.igBeginTabItem("Canvas?", null, c.ImGuiTabItemFlags_None)) {
+                            _ = c.igBeginChild_Str("canvas_child", .{ .x = 500, .y = 300 }, c.ImGuiChildFlags_None, c.ImGuiWindowFlags_HorizontalScrollbar);
+
                             const draw_list = c.igGetWindowDrawList();
                             var canvas_p0: c.ImVec2 = undefined;
                             c.igGetCursorScreenPos(&canvas_p0);
 
-                            const canvas_sz: c.ImVec2 = .{ .x = 500.0, .y = 200.0 };
+                            const canvas_sz: c.ImVec2 = .{ .x = 500.0, .y = 500.0 };
                             const canvas_p1: c.ImVec2 = .{ .x = canvas_p0.x + canvas_sz.x, .y = canvas_p0.y + canvas_sz.y };
                             c.ImDrawList_AddRectFilled(draw_list, canvas_p0, canvas_p1, 0xffaaaaaa, 0, 0);
                             // c.ImDrawList_AddRect(draw_list, canvas_p0, canvas_p1, 0xff000000, 0, 0);
 
+                            c.ImDrawList_PushClipRect(draw_list, canvas_p0, canvas_p1, true);
+
                             for (platform.irq_controllers.items, 0..) |irq_controller, i| {
-                                const p0: c.ImVec2 = .{ .x = canvas_p0.x + 10, .y = canvas_p0.y + 10 + (75 * @as(f32, @floatFromInt(i))) };
-                                const size: c.ImVec2 = .{ .x = 130, .y = 50 };
-                                const p1: c.ImVec2 = .{ .x = p0.x + size.x, .y = p0.y + size.y };
-                                c.ImDrawList_AddRectFilled(draw_list, p0, p1, 0xffdddddd, 0, 0);
                                 var name_bytes = std.ArrayList(u8).init(allocator);
                                 defer name_bytes.deinit();
                                 const name = try dtb.nodeNameFullPath(&name_bytes, irq_controller);
-                                c.ImDrawList_AddText_Vec2(draw_list, .{ .x = p0.x + 10, .y = p0.y + 20 }, 0xff000000, name, null);
+                                var name_size: c.ImVec2 = undefined;
+                                c.igCalcTextSize(&name_size, name, null, false, 0.0);
 
-                                // TODO:
-                                // 1. Get every IRQ that is attached 
-                                const start: c.ImVec2 = .{ .x = p0.x + size.x , .y = p0.y + 25 };
-                                const end: c.ImVec2 = .{ .x = start.x + 100, .y = start.y };
-                                c.ImDrawList_AddLine(draw_list, start, end, 0xff000000, 2);
+                                const p0: c.ImVec2 = .{ .x = canvas_p0.x + 10, .y = canvas_p0.y + 10 + (75 * @as(f32, @floatFromInt(i))) };
+                                const size: c.ImVec2 = .{ .x = @max(130, name_size.x + 20), .y = 50 };
+                                const p1: c.ImVec2 = .{ .x = p0.x + size.x, .y = p0.y + size.y };
+                                c.ImDrawList_AddRectFilled(draw_list, p0, p1, 0xffdddddd, 0, 0);
+
+                                {
+                                    const text_start_x = p0.x + (size.x / 2) - (name_size.x / 2);
+                                    const text_start_y = p0.y + (size.y / 2) - (name_size.y / 2);
+                                    c.ImDrawList_AddText_Vec2(draw_list, .{ .x = text_start_x, .y = text_start_y }, 0xff000000, name, null);
+                                }
+
+                                var num_lines: usize = 0;
+                                for (platform.irqs.items) |irq| {
+                                    if (irq.node.interruptParent() == irq_controller) {
+                                        num_lines += 1;
+                                    }
+                                }
+
+                                const line_spacing: f32 = 30;
+                                // Get the middle, and then subtract half of the total space of all the lines
+                                // const line_y = (p0.y + size.y / 2) - ((@as(f32, @floatFromInt(num_lines)) * line_spacing) / 2);
+                                const line_x = p0.x + (size.x / 2);
+                                const line_y = (p1.y + 30);
+
+                                var line: usize = 0;
+                                for (platform.irqs.items) |irq| {
+                                    if (irq.node.interruptParent() == irq_controller) {
+                                        const line_start: c.ImVec2 = .{ .x = line_x , .y = line_y + @as(f32, @floatFromInt(line)) * line_spacing };
+                                        const line_end: c.ImVec2 = .{ .x = line_start.x + 100, .y = line_start.y };
+                                        c.ImDrawList_AddLine(draw_list, line_start, line_end, 0xff000000, 2);
+
+                                        const text_start: c.ImVec2 = .{
+                                            .x = line_start.x,
+                                            .y = line_start.y - 20,
+                                        };
+                                        const irq_fmt = fmt(allocator, "{} {s}", .{ irq.number, irq.node.name });
+                                        defer allocator.free(irq_fmt);
+                                        c.ImDrawList_AddText_Vec2(draw_list, text_start, 0xff000000, irq_fmt, null);
+
+                                        line += 1;
+                                    }
+                                }
                             }
+
+                            c.ImDrawList_PopClipRect(draw_list);
+
+                            c.igEndChild();
 
                             c.igEndTabItem();
                         }

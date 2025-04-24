@@ -27,6 +27,7 @@ pub fn build(b: *std.Build) void {
 
     const assets = .{
         "build.zig.zon",
+        "assets/maps/riscv_isa_extensions.csv",
         "assets/maps/linux_compatible_list.txt",
         "assets/maps/dt_bindings_list.txt",
         "assets/maps/uboot_compatible_list.txt",

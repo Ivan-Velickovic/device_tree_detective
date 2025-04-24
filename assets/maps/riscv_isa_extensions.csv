@@ -1,0 +1,145 @@
+Extension Name,Description,IC,"Extensions
+Included
+(subsets)","Implied By
+(and
+transitives)","Incompatible
+(and
+transitives)",Ratified,"Ratification
+Date",RVI20,RVA20,RVA22,RVA23,RVB23
+A,Atomic instructions,unpriv,UDB Missing,,UDB MISSING,Y,2019-12,o,m,m,m,m
+B,Bitmanipulation instructions,unpriv,UDB Missing,,UDB MISSING,Y,2024-04,n,n,n,n,n
+C,Compressed instructions,unpriv,UDB Missing,,UDB MISSING,Y,2019-12,o,m,m,m,m
+D,Double-precision floating-point,unpriv,UDB Missing,,UDB MISSING,Y,2019-12,o,m,m,m,m
+F,Single-precision floating-point,unpriv,UDB Missing,D,UDB MISSING,Y,2019-12,o,m,m,m,m
+H,Hypervisor,priv,UDB Missing,Sha,UDB MISSING,Y,2019-12,n,n,n,n,n
+I,Base integer ISA (RV32I or RV64I),unpriv,UDB Missing,,UDB MISSING,Y,2019-06,m,m,m,m,m
+M,Integer multiply and divide instructions,unpriv,UDB Missing,,UDB MISSING,Y,2019-12,o,m,m,m,m
+Q,Quad-Precision Floating-Point,unpriv,UDB Missing,,UDB MISSING,Y,UDB MISSING,n,n,n,n,n
+S,Supervisor mode,priv,UDB Missing,,UDB MISSING,Y,2019-06,n,m,m,m,m
+Sdext,Debug,priv,UDB Missing,,UDB MISSING,Y,UDB MISSING,n,n,n,n,n
+Sdtrig,Debug triggers,priv,UDB Missing,,UDB MISSING,Y,UDB MISSING,n,n,n,o,o
+Sha,The augmented hypervisor extension,priv,UDB Missing,,UDB MISSING,Y,UDB MISSING,n,n,o,m,o
+Shcounterenw,Hypervisor counter enable,priv,UDB Missing,Sha,UDB MISSING,Y,2023-08,n,n,n,n,n
+Shgatpa,hgtap profile requirements,priv,UDB Missing,Sha,UDB MISSING,Y,UDB MISSING,n,n,n,n,n
+Shtvala,htval profile requirements,priv,UDB Missing,Sha,UDB MISSING,Y,UDB MISSING,n,n,n,n,n
+Shvsatpa,vstap translation mode requirements,priv,UDB Missing,Sha,UDB MISSING,Y,UDB MISSING,n,n,n,n,n
+Shvstvala,vstval profile requirements,priv,UDB Missing,Sha,UDB MISSING,Y,UDB MISSING,n,n,n,n,n
+Shvstvecd,vstvec profile requirements,priv,UDB Missing,Sha,UDB MISSING,Y,UDB MISSING,n,n,n,n,n
+Sm,Machine mode,priv,UDB Missing,,UDB MISSING,Y,2019-12,n,n,n,n,n
+Smaia,"Advanced Interrupt Architecture, M-mode extension",priv,UDB Missing,,UDB MISSING,Y,2023-06,n,n,n,n,n
+Smcdeleg,Performance counter delegation,priv,UDB Missing,,UDB MISSING,Y,UDB MISSING,n,n,n,n,n
+Smcntrpmf,Cycle and Instret Privilege Mode Filtering,priv,UDB Missing,,UDB MISSING,Y,2023-08,n,n,n,n,n
+Smdbltrp,Double trap,priv,UDB Missing,,UDB MISSING,Y,UDB MISSING,n,n,n,n,n
+Smhpm,M-mode programmable hardware performance counters,priv,UDB Missing,,UDB MISSING,Y,2019-12,n,n,n,n,n
+Smmpm,Pointer masking for M-mode,priv,UDB Missing,,UDB MISSING,Y,UDB MISSING,n,n,n,n,n
+Smnpm,Pointer masking for next privilege level less than M-mode,priv,UDB Missing,,UDB MISSING,Y,UDB MISSING,n,n,n,n,n
+Smpmp,Physical Memory Protection,priv,UDB Missing,,UDB MISSING,Y,2019-12,n,n,n,n,n
+Smrnmi,Resumable Non-Maskable Interrupts,priv,UDB Missing,,UDB MISSING,Y,UDB MISSING,n,n,n,n,n
+Ssaia,"Advanced Interrupt Architecture, S-mode extension",priv,UDB Missing,,UDB MISSING,Y,2023-06,n,n,n,n,n
+Ssccfg,Supervisor-mode counter configuration,priv,UDB Missing,,UDB MISSING,Y,UDB MISSING,n,n,n,n,n
+Ssccptr,Cacheable and coherent main memory page table reads,priv,UDB Missing,,UDB MISSING,Y,UDB MISSING,n,m,m,m,m
+Sscofpmf,Counter Overflow and Privilege Mode Filtering,priv,UDB Missing,,UDB MISSING,Y,2023-08,n,n,o,m,m
+Sscounterenw,Supervisor counter enable,priv,UDB Missing,,UDB MISSING,Y,2023-08,n,n,m,m,m
+Ssnpm,Pointer masking for next privilege level less than S-mode,priv,UDB Missing,,UDB MISSING,Y,UDB MISSING,n,n,n,m,o
+Sspm,Pointer masking available in supervisor mode,priv,UDB Missing,,UDB MISSING,Y,UDB MISSING,n,n,n,o,o
+Ssstateen,Supervisor-mode view of the state-enable extension,priv,UDB Missing,Sha,UDB MISSING,Y,UDB MISSING,n,n,n,n,n
+Ssstrict,Unimplemented reserved encodings trap and no no-conforming extensions,priv,UDB Missing,,UDB MISSING,Y,UDB MISSING,n,n,n,o,o
+Sstc,Supervisor-mode timer interrupts,priv,UDB Missing,,UDB MISSING,Y,UDB MISSING,n,n,o,m,m
+Sstvala,`stval` requirements for RVA profiles,priv,UDB Missing,,UDB MISSING,Y,UDB MISSING,n,m,m,m,m
+Sstvecd,Direct exception vectoring,priv,UDB Missing,,UDB MISSING,Y,UDB MISSING,n,m,m,m,m
+Ssu64xl,64-bit UXLEN,priv,UDB Missing,,UDB MISSING,Y,UDB MISSING,n,o,o,m,m
+Supm,Pointer masking available in user mode,priv,UDB Missing,,UDB MISSING,Y,UDB MISSING,n,n,n,m,o
+Sv32,32-bit virtual address translation (3 level),priv,UDB Missing,,UDB MISSING,Y,UDB MISSING,n,n,n,n,n
+Sv39,39-bit virtual address translation (3 level),priv,UDB Missing,,UDB MISSING,Y,UDB MISSING,n,m,m,m,m
+Sv48,48-bit virtual address translation (4 level),priv,UDB Missing,,UDB MISSING,Y,UDB MISSING,n,o,o,o,o
+Sv57,57-bit virtual address translation (5 level),priv,UDB Missing,,UDB MISSING,Y,UDB MISSING,n,n,o,o,o
+Svade,Exception on PTE A/D Bits,unpriv,UDB Missing,,UDB MISSING,Y,2023-11,n,m,m,m,m
+Svadu,Hardware Updating of PTE A/D Bits,unpriv,UDB Missing,,UDB MISSING,Y,2023-11,n,n,n,o,o
+Svbare,Bare virtual addressing,priv,UDB Missing,,UDB MISSING,Y,UDB MISSING,n,m,m,m,m
+Svinval,Fine-grained address-translation cache invalidation,priv,UDB Missing,,UDB MISSING,Y,2021-11,n,n,m,m,m
+Svnapot,Naturally-aligned Power of Two Translation Contiguity,priv,UDB Missing,,UDB MISSING,Y,2021-11,n,n,o,m,m
+Svpbmt,Page-based memory types,priv,UDB Missing,,UDB MISSING,Y,UDB MISSING,n,n,m,m,m
+Svvptc,Guarantees visibility of PTE transitions from invalid to valid,priv,UDB Missing,,UDB MISSING,Y,UDB MISSING,n,n,n,o,o
+U,User-mode privilege level,priv,UDB Missing,,UDB MISSING,Y,2019-12,n,m,m,m,m
+V,Variable-length vector,unpriv,UDB Missing,,UDB MISSING,Y,UDB MISSING,n,n,o,m,o
+Xmock,Mock Extension (for testing database),priv,UDB Missing,,UDB MISSING,Y,2024-04,n,n,n,n,n
+Za128rs,Reservation set requirement for RVA profiles,unpriv,UDB Missing,,UDB MISSING,Y,UDB MISSING,n,m,m,m,m
+Za64rs,Reservation set requirement for RVA profiles,unpriv,UDB Missing,,UDB MISSING,Y,UDB MISSING,n,n,n,m,m
+Zaamo,Load-acquire/Store-release atomic instructions,unpriv,UDB Missing,A,UDB MISSING,Y,2024-04,n,n,n,n,n
+Zabha,Byte and Halfword Atomic Memory Operations,unpriv,UDB Missing,,UDB MISSING,Y,UDB MISSING,n,n,n,o,o
+Zacas,Atomic Compare-and-Swap (CAS) Instructions,unpriv,UDB Missing,,UDB MISSING,Y,UDB MISSING,n,n,n,o,o
+Zalasr,"Atomic, Load-Acquire Store-Release",unpriv,UDB Missing,,UDB MISSING,N,,n,n,n,n,n
+Zalrsc,Atomic read-modify-write instructions,unpriv,UDB Missing,A,UDB MISSING,Y,2024-04,n,n,n,n,n
+Zama16b,Misaligned load/store/AMO within aligned 16-byte address are atomic,unpriv,UDB Missing,,UDB MISSING,Y,UDB MISSING,n,n,n,o,o
+Zawrs,Wait-on-Reservation-Set Instructions,unpriv,UDB Missing,,UDB MISSING,Y,2022-11,n,n,n,m,m
+Zba,Address generation instructions,unpriv,UDB Missing,B,UDB MISSING,Y,2021-06,n,n,m,m,m
+Zbb,Basic bit manipulation,unpriv,UDB Missing,B,UDB MISSING,Y,2021-06,n,n,m,m,m
+Zbc,Carry-less multiplication scalar instructions,unpriv,UDB Missing,,UDB MISSING,Y,2021-06,n,n,n,o,o
+Zbkb,Bit-manipulation for Cryptography,unpriv,UDB Missing,"Zkn, Zks",UDB MISSING,Y,UDB MISSING,n,n,n,n,n
+Zbkc,Carry-less multiplication for Cryptography,unpriv,UDB Missing,"Zkn, Zks",UDB MISSING,Y,UDB MISSING,n,n,n,n,n
+Zbkx,Crossbar permutations,unpriv,UDB Missing,"Zkn, Zks",UDB MISSING,Y,UDB MISSING,n,n,n,n,n
+Zbs,Single-bit instructions,unpriv,UDB Missing,B,UDB MISSING,Y,2021-06,n,n,m,m,m
+Zca,C instructions excluding floating-point,unpriv,UDB Missing,"C, Zce, Zcmt",UDB MISSING,Y,2023-04,n,n,n,n,n
+Zcb,Simple code-size saving instructions,unpriv,UDB Missing,"Zce, Zcmt",UDB MISSING,Y,2023-04,n,n,n,m,m
+Zcd,Compressed instructions for double precision floating point,unpriv,UDB Missing,C,UDB MISSING,Y,2023-04,n,n,n,n,n
+Zce,Compressed instructions for microcontrollers,unpriv,UDB Missing,,UDB MISSING,Y,2023-04,n,n,n,n,n
+Zcf,Compressed instructions for single precision floating point,unpriv,UDB Missing,C,UDB MISSING,Y,2023-04,n,n,n,n,n
+Zcmop,16-bit May-be Operations,unpriv,UDB Missing,,UDB MISSING,Y,UDB MISSING,n,n,n,m,m
+Zcmp,16-bit Push/Pop instructions,unpriv,UDB Missing,"Zce, Zcmt",UDB MISSING,Y,2023-04,n,n,n,n,n
+Zcmt,16-bit Table Jump,unpriv,UDB Missing,Zce,UDB MISSING,Y,2023-04,n,n,n,n,n
+Zfa,Extension for Additional Floating-Point Instructions,unpriv,UDB Missing,,UDB MISSING,Y,UDB MISSING,n,n,n,m,m
+Zfbfmin,Scalar BF16 Converts,unpriv,UDB Missing,,UDB MISSING,Y,UDB MISSING,n,n,n,o,o
+Zfh,Half-precision floating point,unpriv,UDB Missing,,UDB MISSING,Y,UDB MISSING,n,n,o,o,o
+Zfhmin,Minimal half-precision Floating-point,unpriv,UDB Missing,,UDB MISSING,Y,2021-11,n,n,m,m,o
+Zhinx,Half-precision floating-point instructions using integer registers,unpriv,UDB Missing,,UDB MISSING,Y,2021-11,n,n,n,n,n
+Zic64b,64-byte cache blocks,priv,UDB Missing,,UDB MISSING,Y,UDB MISSING,n,n,m,m,m
+Zicbom,Cache block management instructions,unpriv,UDB Missing,,UDB MISSING,Y,2022-05,n,n,m,m,m
+Zicbop,Cache block prefetch,unpriv,UDB Missing,,UDB MISSING,Y,2022-05,n,n,m,m,m
+Zicboz,Cache block zero instruction,unpriv,UDB Missing,,UDB MISSING,Y,2022-05,n,n,m,m,m
+Ziccamoa,Main memory atomicity requirement for RVA profiles,unpriv,UDB Missing,,UDB MISSING,Y,UDB MISSING,n,m,m,m,m
+Ziccamoc,Cacheable and coherent PMAs provide `AMOCASQ` level PMA support,unpriv,UDB Missing,,UDB MISSING,Y,UDB MISSING,n,n,n,o,o
+Ziccif,Main memory fetch requirement for RVA profiles,unpriv,UDB Missing,,UDB MISSING,Y,UDB MISSING,n,m,m,m,m
+Zicclsm,Main memory misaligned requirement for RVA profiles,unpriv,UDB Missing,,UDB MISSING,Y,UDB MISSING,n,m,m,m,m
+Ziccrse,Main memory reservability requirement for RVA profiles,unpriv,UDB Missing,,UDB MISSING,Y,UDB MISSING,n,m,m,m,m
+Zicfilp,Landing Pads,unpriv,UDB Missing,,UDB MISSING,Y,2024-07,n,n,n,o,o
+Zicfiss,Shadow Stack,unpriv,UDB Missing,,UDB MISSING,Y,2024-07,n,n,n,o,o
+Zicntr,Architectural performance counters,unpriv,UDB Missing,,UDB MISSING,Y,2019-12,o,m,m,m,m
+Zicond,Integer Conditional Operations,unpriv,UDB Missing,,UDB MISSING,Y,UDB MISSING,n,n,n,m,m
+Zicsr,Control and status registers,unpriv,UDB Missing,,UDB MISSING,Y,UDB MISSING,n,n,n,n,n
+Zifencei,Instruction fence,unpriv,UDB Missing,,UDB MISSING,Y,UDB MISSING,o,m,m,m,m
+Zihintntl,NTL (Non-Temporal Locality) Hint Instructions,unpriv,UDB Missing,,UDB MISSING,Y,UDB MISSING,n,n,n,m,m
+Zihintpause,PAUSE instruction,unpriv,UDB Missing,,UDB MISSING,Y,UDB MISSING,n,n,m,m,m
+Zihpm,Programmable hardware performance counters,unpriv,UDB Missing,,UDB MISSING,Y,UDB MISSING,o,o,m,m,m
+Zilsd,Load/Store Pair for RV32,unpriv,UDB Missing,,UDB MISSING,Y,2025-02,n,n,n,n,n
+Zimop,May-be Operations,unpriv,UDB Missing,,UDB MISSING,Y,UDB MISSING,n,n,n,m,m
+Zk,Standard Cryptography Extensions,unpriv,UDB Missing,,UDB MISSING,Y,UDB MISSING,n,n,n,n,n
+Zkn,NIST Algorithm Suite,unpriv,UDB Missing,Zk,UDB MISSING,Y,UDB MISSING,n,n,o,o,o
+Zknd,NIST Suite: AES Decryption,unpriv,UDB Missing,"Zkn, Zks",UDB MISSING,Y,UDB MISSING,n,n,n,n,n
+Zkne,NIST Suite: AES Encryption,unpriv,UDB Missing,"Zkn, Zks",UDB MISSING,Y,UDB MISSING,n,n,n,n,n
+Zknh,NIST Suite: Hash Function Instructions,unpriv,UDB Missing,"Zkn, Zks",UDB MISSING,Y,UDB MISSING,n,n,n,n,n
+Zkr,Entropy Source,unpriv,UDB Missing,Zk,UDB MISSING,Y,UDB MISSING,n,n,o,o,o
+Zks,ShangMi Algorithm Suite,unpriv,UDB Missing,,UDB MISSING,Y,UDB MISSING,n,n,o,o,o
+Zksed,ShangMi Suite: SM4 Block Cipher Instructions,unpriv,UDB Missing,,UDB MISSING,Y,UDB MISSING,n,n,n,n,n
+Zksh,ShangMi Suite: SM3 Hash Function Instructions,unpriv,UDB Missing,,UDB MISSING,Y,UDB MISSING,n,n,n,n,n
+Zkt,Data-independent execution latency,unpriv,UDB Missing,,UDB MISSING,Y,2021-11,n,n,m,m,m
+Zmmul,Integer multiplication instructions,unpriv,UDB Missing,,UDB MISSING,Y,2022-06,n,n,n,n,n
+Zvbb,Vector Basic Bit-manipulation,unpriv,UDB Missing,,UDB MISSING,Y,UDB MISSING,n,n,n,m,o
+Zvbc,Vector Carryless Multiplication,unpriv,UDB Missing,"Zvknc, Zvksc",UDB MISSING,Y,UDB MISSING,n,n,n,o,o
+Zvfbfmin,Vector BF16 Converts,unpriv,UDB Missing,,UDB MISSING,Y,UDB MISSING,n,n,n,o,o
+Zvfbfwma,Vector BF16 widening mul-add,unpriv,UDB Missing,,UDB MISSING,Y,UDB MISSING,n,n,n,o,o
+Zvfh,Vector Extension for Half-Precision Floating-Point,unpriv,UDB Missing,,UDB MISSING,Y,UDB MISSING,n,n,n,o,o
+Zvfhmin,Vector Extension for Minimal Half-Precision Floating-Point,unpriv,UDB Missing,,UDB MISSING,Y,UDB MISSING,n,n,n,m,o
+Zvkb,Vector Cryptography Bit-manipulation,unpriv,UDB Missing,"Zvbb, Zvkn, Zvks",UDB MISSING,Y,UDB MISSING,n,n,n,n,n
+Zvkg,Vector GCM/GMAC,unpriv,UDB Missing,"Zvkng, Zvksg",UDB MISSING,Y,UDB MISSING,n,n,n,o,o
+Zvkn,NIST Algorithm Suite,unpriv,UDB Missing,"Zvknc, Zvkng",UDB MISSING,Y,UDB MISSING,n,n,n,n,n
+Zvknc,NIST Algorithm Suite with carryless multiply,unpriv,UDB Missing,,UDB MISSING,Y,UDB MISSING,n,n,n,o,o
+Zvkned,NIST Suite: Vector AES Block Cipher,unpriv,UDB Missing,Zvkn,UDB MISSING,Y,UDB MISSING,n,n,n,n,n
+Zvkng,NIST Algorithm Suite with GCM,unpriv,UDB Missing,,UDB MISSING,Y,UDB MISSING,n,n,n,o,o
+Zvknha,NIST Suite: Vector SHA-2 Secure Hash (SHA-256),unpriv,UDB Missing,Zvknhb,UDB MISSING,Y,UDB MISSING,n,n,n,n,n
+Zvknhb,NIST Suite: Vector SHA-2 Secure Hash (SHA-256 + SHA-512),unpriv,UDB Missing,Zvkn,UDB MISSING,Y,UDB MISSING,n,n,n,n,n
+Zvks,ShangMi Algorithm Suite,unpriv,UDB Missing,"Zvksc, Zvksg",UDB MISSING,Y,UDB MISSING,n,n,n,n,n
+Zvksc,ShangMi Algorithm Suite with carryless multiplication,unpriv,UDB Missing,,UDB MISSING,Y,UDB MISSING,n,n,n,o,o
+Zvksed,ShangMi Suite: SM4 Block Cipher,unpriv,UDB Missing,Zvks,UDB MISSING,Y,UDB MISSING,n,n,n,n,n
+Zvksg,ShangMi Algorithm Suite with GCM,unpriv,UDB Missing,,UDB MISSING,Y,UDB MISSING,n,n,n,o,o
+Zvksh,ShangMi Suite: SM3 Secure Hash,unpriv,UDB Missing,Zvks,UDB MISSING,Y,UDB MISSING,n,n,n,n,n
+Zvkt,Vector Data-Independent Execution Latency,unpriv,UDB Missing,"Zvkn, Zvks",UDB MISSING,Y,UDB MISSING,n,n,n,m,o
