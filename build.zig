@@ -78,14 +78,7 @@ pub fn build(b: *std.Build) void {
     }
 
     exe.linkLibC();
-
-    const cimgui_gen_out_path = cimgui_dep.path("generator/output");
-    const imgui_path = cimgui_dep.path("imgui/");
-    const imgui_backend_path = imgui_path.path(b, "backends");
-
-    exe.addIncludePath(imgui_path);
-    exe.addIncludePath(imgui_backend_path);
-    exe.addIncludePath(cimgui_gen_out_path);
+    exe.linkLibCpp();
 
     exe.addCSourceFile(.{ .file = b.path("src/ig_extern.c") });
     if (target.result.os.tag == .linux) {
@@ -94,6 +87,12 @@ pub fn build(b: *std.Build) void {
     if (target.result.os.tag == .windows) {
         exe.addCSourceFile(.{ .file = b.path("src/windows_dialog.cpp") });
     }
+
+    const imgui_path = cimgui_dep.path("imgui/");
+    const imgui_backend_path = imgui_path.path(b, "backends");
+
+    exe.addIncludePath(imgui_path);
+    exe.addIncludePath(imgui_backend_path);
 
     const cpp_flags: []const []const u8 = &[_][]const u8
     {
@@ -104,16 +103,21 @@ pub fn build(b: *std.Build) void {
         "-DIMGUI_IMPL_API=extern \"C\" ",
         "-DIMGUI_IMPL_OPENGL_LOADER_GL3W",
     };
-    exe.linkLibCpp(); // Dear Imgui uses C++ standard library
 
     // --- Dear ImGui proper ---
-    exe.addCSourceFile(.{ .file = imgui_path.path(b, "imgui.cpp"), .flags = cpp_flags });
-    exe.addCSourceFile(.{ .file = imgui_path.path(b, "imgui_demo.cpp"), .flags = cpp_flags });
-    exe.addCSourceFile(.{ .file = imgui_path.path(b, "imgui_draw.cpp"), .flags = cpp_flags });
-    exe.addCSourceFile(.{ .file = imgui_path.path(b, "imgui_tables.cpp"), .flags = cpp_flags });
-    exe.addCSourceFile(.{ .file = imgui_path.path(b, "imgui_widgets.cpp"), .flags = cpp_flags });
-    exe.addCSourceFile(.{ .file = imgui_backend_path.path(b, "imgui_impl_glfw.cpp"), .flags = cpp_flags });
-    exe.addCSourceFile(.{ .file = imgui_backend_path.path(b, "imgui_impl_opengl3.cpp"), .flags = cpp_flags });
+    exe.addCSourceFiles(.{
+        .root = imgui_path,
+        .files = &.{
+            "imgui.cpp",
+            "imgui_demo.cpp",
+            "imgui_draw.cpp",
+            "imgui_tables.cpp",
+            "imgui_widgets.cpp",
+            "backends/imgui_impl_glfw.cpp",
+            "backends/imgui_impl_opengl3.cpp",
+        },
+        .flags = cpp_flags,
+    });
     // --- CImGui wrapper ---
     exe.addIncludePath(cimgui_dep.path(""));
     exe.addCSourceFile(.{ .file = cimgui_dep.path("cimgui.cpp"), .flags = cpp_flags });

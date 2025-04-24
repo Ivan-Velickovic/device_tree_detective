@@ -151,6 +151,34 @@ fn setColour(colour: Colour, value: c.ImVec4) void {
     c.igGetStyle().*.Colors[@intFromEnum(colour)] = value;
 }
 
+fn humanTimestampDiff(allocator: Allocator, t0: i64, t1: i64) [:0]const u8 {
+    const diff_s = t1 - t0;
+    if (diff_s < std.time.s_per_hour) {
+        const diff_m = @divFloor(diff_s, 60);
+        if (diff_m == 0) {
+            return fmt(allocator, "just now", .{});
+        } else if (diff_m == 1) {
+            return fmt(allocator, "{d} minute ago", .{ diff_m });
+        } else {
+            return fmt(allocator, "{d} minutes ago", .{ diff_m });
+        }
+    } else if (diff_s < std.time.s_per_day) {
+        const diff_h = @divFloor(diff_s, 60 * 60);
+        if (diff_h == 1) {
+            return fmt(allocator, "{d} hour ago", .{ diff_h });
+        } else {
+            return fmt(allocator, "{d} hours ago", .{ diff_h });
+        }
+    } else {
+        const diff_d = @divFloor(diff_s, 60 * 60 * 24);
+        if (diff_d == 1) {
+            return fmt(allocator, "{d} day ago", .{ diff_d });
+        } else {
+            return fmt(allocator, "{d} days ago", .{ diff_d });
+        }
+    }
+}
+
 // TODO: move into State struct
 const SavedState = struct {
     allocator: Allocator,
@@ -158,10 +186,19 @@ const SavedState = struct {
     file: std.fs.File,
     parsed: ?std.json.Parsed(Json),
     // TODO: statically allocate and put limit of a 100 or something?
-    recently_opened: std.ArrayList([:0]const u8),
+    recently_opened: std.ArrayList(RecentlyOpened),
+
+    const RecentlyOpened = struct {
+        path: [:0]const u8,
+        last_opened: i64,
+
+        fn asc(_: void, a: RecentlyOpened, b: RecentlyOpened) bool {
+            return a.last_opened > b.last_opened;
+        }
+    };
 
     const Json = struct {
-        recently_opened: []const [:0]const u8,
+        recently_opened: []RecentlyOpened,
     };
 
     fn createEmpty(allocator: Allocator, path: []const u8, file: std.fs.File) error{OutOfMemory}!SavedState {
@@ -170,7 +207,7 @@ const SavedState = struct {
             .path = path,
             .file = file,
             .parsed = null,
-            .recently_opened = std.ArrayList([:0]const u8).init(allocator),
+            .recently_opened = std.ArrayList(RecentlyOpened).init(allocator),
         };
         s.save() catch @panic("todo");
 
@@ -197,13 +234,16 @@ const SavedState = struct {
             return createEmpty(allocator, path, file);
         };
 
-        var recently_opened = try std.ArrayList([:0]const u8).initCapacity(allocator, parsed.value.recently_opened.len);
-        for (parsed.value.recently_opened) |p| {
-            std.fs.cwd().access(p, .{}) catch |e| {
-                std.log.info("cannot access recently opened file '{s}' ({any}), dropping from list", .{ p, e });
+        var recently_opened = try std.ArrayList(RecentlyOpened).initCapacity(allocator, parsed.value.recently_opened.len);
+        for (parsed.value.recently_opened) |entry| {
+            std.fs.cwd().access(entry.path, .{}) catch |e| {
+                std.log.info("cannot access recently opened file '{s}' ({any}), dropping from list", .{ entry.path, e });
                 continue;
             };
-            recently_opened.appendAssumeCapacity(try allocator.dupeZ(u8, p));
+            recently_opened.appendAssumeCapacity(.{
+                .path = try allocator.dupeZ(u8, entry.path),
+                .last_opened = entry.last_opened,
+            });
         }
 
         log.info("using existing user configuration '{s}'", .{ path });
@@ -218,8 +258,8 @@ const SavedState = struct {
     }
 
     pub fn isRecentlyOpened(s: *SavedState, path: []const u8) bool {
-        for (s.recently_opened.items) |p| {
-            if (std.mem.eql(u8, p, path)) {
+        for (s.recently_opened.items) |entry| {
+            if (std.mem.eql(u8, entry.path, path)) {
                 return true;
             }
         }
@@ -239,8 +279,8 @@ const SavedState = struct {
             p.deinit();
         }
         s.file.close();
-        for (s.recently_opened.items) |p| {
-            s.allocator.free(p);
+        for (s.recently_opened.items) |entry| {
+            s.allocator.free(entry.path);
         }
         s.recently_opened.deinit();
     }
@@ -318,10 +358,27 @@ const State = struct {
         try s.platforms.append(platform);
 
         if (!saved.isRecentlyOpened(path)) {
-            // TODO: should instead order by recently opened
-            try saved.recently_opened.append(try s.allocator.dupeZ(u8, path));
-            try saved.save();
+            try saved.recently_opened.append(.{
+                .path = try s.allocator.dupeZ(u8, path),
+                .last_opened = std.time.timestamp(),
+            });
+        } else {
+            // Update last opened timestamp
+            var updated = false;
+            for (saved.recently_opened.items) |*entry| {
+                if (std.mem.eql(u8, entry.path, path)) {
+                    entry.last_opened = std.time.timestamp();
+                    updated = true;
+                    break;
+                }
+            }
+
+            std.debug.assert(updated);
         }
+
+        std.mem.sort(SavedState.RecentlyOpened, saved.recently_opened.items, {}, SavedState.RecentlyOpened.asc);
+
+        try saved.save();
     }
 
     pub fn unloadPlatform(s: *State, path: [:0]const u8) void {
@@ -648,17 +705,17 @@ fn irqListAdd(nodes: []*dtb.Node, irqs: *std.ArrayList(Irq)) !void {
 const Irq = struct {
     number: u64,
     node: *dtb.Node,
-};
 
-fn irqAsc(_: void, a: Irq, b: Irq) bool {
-    return a.number < b.number;
-}
+    fn asc(_: void, a: Irq, b: Irq) bool {
+        return a.number < b.number;
+    }
+};
 
 fn irqList(allocator: Allocator, root: *dtb.Node) !std.ArrayList(Irq) {
     var irqs = std.ArrayList(Irq).init(allocator);
     try irqListAdd(root.children, &irqs);
 
-    std.mem.sort(Irq, irqs.items, {}, irqAsc);
+    std.mem.sort(Irq, irqs.items, {}, Irq.asc);
 
     return irqs;
 }
@@ -798,6 +855,23 @@ const CompatibleMap = struct {
 // TODO: clean up
 fn stringLessThan(_: void, lhs: []const u8, rhs: []const u8) bool {
     return std.mem.order(u8, lhs, rhs) == .lt;
+}
+
+fn displayExampleDtbs(label: [:0]const u8, dtbs: ?std.ArrayList([:0]const u8), selected: *?[:0]const u8) void {
+    if (dtbs != null and c.igBeginMenu(label, true)) {
+        const filter = c.ImGuiTextFilter_ImGuiTextFilter(null);
+        defer c.ImGuiTextFilter_destroy(filter);
+        _ = c.ImGuiTextFilter_Draw(filter, "example-dtb-filter", 0);
+
+        for (dtbs.?.items) |example| {
+            // TODO: there's a bug here, clicking instead clears the filter rather than
+            // selecting the DTB to load
+            if (c.ImGuiTextFilter_PassFilter(filter, example, null) and c.igMenuItem_Bool(example, null, false, true)) {
+                selected.* = example;
+            }
+        }
+        c.igEndMenu();
+    }
 }
 
 fn exampleDtbs(allocator: Allocator, dir_path: []const u8) !std.ArrayList([:0]const u8) {
@@ -1200,26 +1274,8 @@ pub fn main() !void {
                 }
                 c.igSeparator();
                 if (c.igBeginMenu("Example DTBs", true)) {
-                    if (sel4_example_dtbs) |list| {
-                        if (c.igBeginMenu("seL4", true)) {
-                            for (list.items) |example| {
-                                if (c.igMenuItem_Bool(example, null, false, true)) {
-                                    dtb_to_load = example;
-                                }
-                            }
-                            c.igEndMenu();
-                        }
-                    }
-                    if (linux_example_dtbs) |list| {
-                        if (c.igBeginMenu("Linux", true)) {
-                            for (list.items) |example| {
-                                if (c.igMenuItem_Bool(example, null, false, true)) {
-                                    dtb_to_load = example;
-                                }
-                            }
-                            c.igEndMenu();
-                        }
-                    }
+                    displayExampleDtbs("seL4", sel4_example_dtbs, &dtb_to_load);
+                    displayExampleDtbs("Linux", linux_example_dtbs, &dtb_to_load);
                     c.igEndMenu();
                 }
                 if (builtin.mode == .Debug) {
@@ -1428,13 +1484,13 @@ pub fn main() !void {
                         if (c.igTreeNodeEx_Str("RISC-V ISA Extensions", c.ImGuiTreeNodeFlags_DefaultOpen)) {
                             const isa_filter = c.ImGuiTextFilter_ImGuiTextFilter(null);
                             defer c.ImGuiTextFilter_destroy(isa_filter);
-                            _ = c.ImGuiTextFilter_Draw(isa_filter, "extensisons-filter", 200);
+                            _ = c.ImGuiTextFilter_Draw(isa_filter, "Filter Extensions", 200);
 
                             for (extensions) |extension| {
                                 const extension_fmt = blk: {
                                     const maybe_fullname = riscv_isa_extensions.get(extension);
                                     if (maybe_fullname) |fullname| {
-                                        break :blk fmt(allocator, "{s} ({s})", .{ extension, fullname });
+                                        break :blk fmt(allocator, "{s} - {s}", .{ extension, fullname });
                                     } else {
                                         break :blk fmt(allocator, "{s}", .{ extension });
                                     }
@@ -1566,15 +1622,16 @@ pub fn main() !void {
 
             c.igText("Recently opened");
             if (c.igButton("Clear items", .{})) {
-                for (saved_state.recently_opened.items) |p| {
-                    saved_state.allocator.free(p);
+                for (saved_state.recently_opened.items) |entry| {
+                    saved_state.allocator.free(entry.path);
                 }
                 saved_state.recently_opened.clearAndFree();
                 try saved_state.save();
             }
             var selected_item: ?usize = null;
             if (c.igBeginTable("##recent-dtbs", 1, 0, .{}, 0.0)) {
-                for (saved_state.recently_opened.items, 0..) |r, i| {
+                const timestamp = std.time.timestamp();
+                for (saved_state.recently_opened.items, 0..) |entry, i| {
                     c.igTableNextRow(0, 0);
                     const colour = c.igGetColorU32_Vec4(Colour.toVec(0xF2A05C));
                     c.igTableSetBgColor(c.ImGuiTableBgTarget_RowBg0 + 1, colour, -1);
@@ -1582,7 +1639,13 @@ pub fn main() !void {
                     const is_selected = selected_item != null and selected_item.? == i;
                     const flags = if (is_selected) c.ImGuiSelectableFlags_Highlight else c.ImGuiSelectableFlags_None;
 
-                    if (c.igSelectable_Bool(r, is_selected, flags, .{})) {
+                    const timestamp_fmt = humanTimestampDiff(allocator, entry.last_opened, timestamp);
+                    defer allocator.free(timestamp_fmt);
+
+                    const entry_fmt = fmt(allocator, "{s} ({s})", .{ entry.path, timestamp_fmt });
+                    defer allocator.free(entry_fmt);
+
+                    if (c.igSelectable_Bool(entry_fmt, is_selected, flags, .{})) {
                         selected_item = i;
                     }
 
@@ -1595,7 +1658,7 @@ pub fn main() !void {
             c.igEnd();
 
             if (selected_item) |i| {
-                const item: [:0]const u8 = saved_state.recently_opened.items[i];
+                const item: [:0]const u8 = saved_state.recently_opened.items[i].path;
                 try state.loadPlatform(&saved_state, item);
                 state.setPlatform(item);
             }
