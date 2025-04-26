@@ -48,6 +48,7 @@
       through all the example DTBs and tries to parse them.
 * [ ] Resizable windows - see child windows section of demo
 * [ ] paths should be prefixed with ~ rather than /Users/ivanv/ or /home/ivanv etc
+* [ ] native menu bar for macOS
 
 ```
 error: GLFW Error '65544'': Cocoa: Failed to query display mode

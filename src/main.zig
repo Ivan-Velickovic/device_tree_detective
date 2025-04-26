@@ -179,112 +179,6 @@ fn humanTimestampDiff(allocator: Allocator, t0: i64, t1: i64) [:0]const u8 {
     }
 }
 
-// TODO: move into State struct
-const SavedState = struct {
-    allocator: Allocator,
-    path: []const u8,
-    file: std.fs.File,
-    parsed: ?std.json.Parsed(Json),
-    // TODO: statically allocate and put limit of a 100 or something?
-    recently_opened: std.ArrayList(RecentlyOpened),
-
-    const RecentlyOpened = struct {
-        path: [:0]const u8,
-        last_opened: i64,
-
-        fn asc(_: void, a: RecentlyOpened, b: RecentlyOpened) bool {
-            return a.last_opened > b.last_opened;
-        }
-    };
-
-    const Json = struct {
-        recently_opened: []RecentlyOpened,
-    };
-
-    fn createEmpty(allocator: Allocator, path: []const u8, file: std.fs.File) error{OutOfMemory}!SavedState {
-        var s: SavedState = .{
-            .allocator = allocator,
-            .path = path,
-            .file = file,
-            .parsed = null,
-            .recently_opened = std.ArrayList(RecentlyOpened).init(allocator),
-        };
-        s.save() catch @panic("todo");
-
-        return s;
-    }
-
-    pub fn create(allocator: Allocator, path: []const u8) error{OutOfMemory}!SavedState {
-        // Create the file if it does not exist.
-        const file = std.fs.cwd().openFile(path, .{ .mode = .read_write }) catch |e| {
-            switch (e) {
-                error.FileNotFound => {
-                    log.info("saved state configuration does not exist '{s}', starting from scratch", .{ path });
-                    const new_file = std.fs.cwd().createFile(path, .{}) catch @panic("TODO");
-                    return createEmpty(allocator, path, new_file);
-                },
-                else => @panic("TODO"),
-            }
-        };
-        const stat = file.stat() catch @panic("TODO");
-        const bytes = file.reader().readAllAlloc(allocator, stat.size) catch @panic("TODO");
-        defer allocator.free(bytes);
-        const parsed = std.json.parseFromSlice(Json, allocator, bytes, .{}) catch |e| {
-            log.err("could not parse saved state configuration '{s}' with error '{any}' removing and starting from scratch", .{ path, e });
-            return createEmpty(allocator, path, file);
-        };
-
-        var recently_opened = try std.ArrayList(RecentlyOpened).initCapacity(allocator, parsed.value.recently_opened.len);
-        for (parsed.value.recently_opened) |entry| {
-            std.fs.cwd().access(entry.path, .{}) catch |e| {
-                std.log.info("cannot access recently opened file '{s}' ({any}), dropping from list", .{ entry.path, e });
-                continue;
-            };
-            recently_opened.appendAssumeCapacity(.{
-                .path = try allocator.dupeZ(u8, entry.path),
-                .last_opened = entry.last_opened,
-            });
-        }
-
-        log.info("using existing user configuration '{s}'", .{ path });
-
-        return .{
-            .allocator = allocator,
-            .file = file,
-            .path = path,
-            .parsed = parsed,
-            .recently_opened = recently_opened,
-        };
-    }
-
-    pub fn isRecentlyOpened(s: *SavedState, path: []const u8) bool {
-        for (s.recently_opened.items) |entry| {
-            if (std.mem.eql(u8, entry.path, path)) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /// Take the current state and write it out to the assocaited path
-    pub fn save(s: *SavedState) !void {
-        try s.file.seekTo(0);
-        try s.file.setEndPos(0);
-        try std.json.stringify(.{ .recently_opened = s.recently_opened.items }, .{ .whitespace = .indent_4 }, s.file.writer());
-    }
-
-    pub fn deinit(s: *SavedState) void {
-        if (s.parsed) |p| {
-            p.deinit();
-        }
-        s.file.close();
-        for (s.recently_opened.items) |entry| {
-            s.allocator.free(entry.path);
-        }
-        s.recently_opened.deinit();
-    }
-};
 
 const State = struct {
     allocator: Allocator,
@@ -298,11 +192,13 @@ const State = struct {
     main_menu_bar_height: f32 = undefined,
     /// Tree view state
     highlighted_node: ?*dtb.Node = null,
+    persistent: Persistent,
 
     pub fn create(allocator: Allocator) State {
         return .{
             .allocator = allocator,
             .platforms = std.ArrayList(Platform).init(allocator),
+            .persistent = Persistent.create(allocator, "user.json") catch @panic("TODO"),
         };
     }
 
@@ -348,7 +244,7 @@ const State = struct {
         }
     }
 
-    pub fn loadPlatform(s: *State, saved: *SavedState, path: [:0]const u8) !void {
+    pub fn loadPlatform(s: *State, path: [:0]const u8) !void {
         // No need to load anything if it already exists
         if (s.isPlatformLoaded(path)) {
             return;
@@ -357,15 +253,15 @@ const State = struct {
         const platform = try Platform.init(s.allocator, path);
         try s.platforms.append(platform);
 
-        if (!saved.isRecentlyOpened(path)) {
-            try saved.recently_opened.append(.{
+        if (!s.persistent.isRecentlyOpened(path)) {
+            try s.persistent.recently_opened.append(.{
                 .path = try s.allocator.dupeZ(u8, path),
                 .last_opened = std.time.timestamp(),
             });
         } else {
             // Update last opened timestamp
             var updated = false;
-            for (saved.recently_opened.items) |*entry| {
+            for (s.persistent.recently_opened.items) |*entry| {
                 if (std.mem.eql(u8, entry.path, path)) {
                     entry.last_opened = std.time.timestamp();
                     updated = true;
@@ -376,9 +272,9 @@ const State = struct {
             std.debug.assert(updated);
         }
 
-        std.mem.sort(SavedState.RecentlyOpened, saved.recently_opened.items, {}, SavedState.RecentlyOpened.asc);
+        std.mem.sort(Persistent.RecentlyOpened, s.persistent.recently_opened.items, {}, Persistent.RecentlyOpened.asc);
 
-        try saved.save();
+        try s.persistent.save();
     }
 
     pub fn unloadPlatform(s: *State, path: [:0]const u8) void {
@@ -451,17 +347,123 @@ const State = struct {
             p.deinit();
         }
         s.platforms.deinit();
+        s.persistent.deinit();
     }
+
+    const Persistent = struct {
+        allocator: Allocator,
+        path: []const u8,
+        file: std.fs.File,
+        parsed: ?std.json.Parsed(Json),
+        // TODO: statically allocate and put limit of a 100 or something?
+        recently_opened: std.ArrayList(RecentlyOpened),
+
+        const RecentlyOpened = struct {
+            path: [:0]const u8,
+            last_opened: i64,
+
+            fn asc(_: void, a: RecentlyOpened, b: RecentlyOpened) bool {
+                return a.last_opened > b.last_opened;
+            }
+        };
+
+        const Json = struct {
+            recently_opened: []RecentlyOpened,
+        };
+
+        fn createEmpty(allocator: Allocator, path: []const u8, file: std.fs.File) error{OutOfMemory}!Persistent {
+            var p: Persistent = .{
+                .allocator = allocator,
+                .path = path,
+                .file = file,
+                .parsed = null,
+                .recently_opened = std.ArrayList(RecentlyOpened).init(allocator),
+            };
+            p.save() catch @panic("todo");
+
+            return p;
+        }
+
+        pub fn create(allocator: Allocator, path: []const u8) error{OutOfMemory}!Persistent {
+            // Create the file if it does not exist.
+            const file = std.fs.cwd().openFile(path, .{ .mode = .read_write }) catch |e| {
+                switch (e) {
+                    error.FileNotFound => {
+                        log.info("persistent state configuration does not exist '{s}', starting from scratch", .{ path });
+                        const new_file = std.fs.cwd().createFile(path, .{}) catch @panic("TODO");
+                        return createEmpty(allocator, path, new_file);
+                    },
+                    else => @panic("TODO"),
+                }
+            };
+            const stat = file.stat() catch @panic("TODO");
+            const bytes = file.reader().readAllAlloc(allocator, stat.size) catch @panic("TODO");
+            defer allocator.free(bytes);
+            const parsed = std.json.parseFromSlice(Json, allocator, bytes, .{}) catch |e| {
+                log.err("could not parse persistent state configuration '{s}' with error '{any}' removing and starting from scratch", .{ path, e });
+                return createEmpty(allocator, path, file);
+            };
+
+            var recently_opened = try std.ArrayList(RecentlyOpened).initCapacity(allocator, parsed.value.recently_opened.len);
+            for (parsed.value.recently_opened) |entry| {
+                std.fs.cwd().access(entry.path, .{}) catch |e| {
+                    std.log.info("cannot access recently opened file '{s}' ({any}), dropping from list", .{ entry.path, e });
+                    continue;
+                };
+                recently_opened.appendAssumeCapacity(.{
+                    .path = try allocator.dupeZ(u8, entry.path),
+                    .last_opened = entry.last_opened,
+                });
+            }
+
+            log.info("using existing user configuration '{s}'", .{ path });
+
+            return .{
+                .allocator = allocator,
+                .file = file,
+                .path = path,
+                .parsed = parsed,
+                .recently_opened = recently_opened,
+            };
+        }
+
+        pub fn isRecentlyOpened(p: *Persistent, path: []const u8) bool {
+            for (p.recently_opened.items) |entry| {
+                if (std.mem.eql(u8, entry.path, path)) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// Take the current state and write it out to the assocaited path
+        pub fn save(p: *Persistent) !void {
+            try p.file.seekTo(0);
+            try p.file.setEndPos(0);
+            try std.json.stringify(.{ .recently_opened = p.recently_opened.items }, .{ .whitespace = .indent_4 }, p.file.writer());
+        }
+
+        pub fn deinit(p: *Persistent) void {
+            if (p.parsed) |parsed| {
+                parsed.deinit();
+            }
+            p.file.close();
+            for (p.recently_opened.items) |entry| {
+                p.allocator.free(entry.path);
+            }
+            p.recently_opened.deinit();
+        }
+    };
 };
 
 var state: State = undefined;
-var saved_state: SavedState = undefined;
 
 fn dropCallback(_: ?*c.GLFWwindow, count: c_int, paths: [*c][*c]const u8) callconv(.C) void {
     for (0..@intCast(count)) |i| {
         log.debug("adding dropped '{s}'", .{ paths[i] });
         // TODO: check the file is actually an FDT
-        state.loadPlatform(&saved_state, std.mem.span(paths[i])) catch @panic("TODO");
+        state.loadPlatform(std.mem.span(paths[i])) catch @panic("TODO");
     }
     state.setPlatform(std.mem.span(paths[@as(usize, @intCast(count)) - 1]));
 }
@@ -901,7 +903,7 @@ fn memoryInputTextCallback(_: ?*c.ImGuiInputTextCallbackData) callconv(.C) c_int
     return 0;
 }
 
-fn handleFileDialogue(allocator: Allocator, s: *State, saved: *SavedState) !void {
+fn handleFileDialogue(allocator: Allocator, s: *State) !void {
     const paths = try openFilePicker(allocator);
     defer {
         for (paths.items) |path| {
@@ -910,7 +912,7 @@ fn handleFileDialogue(allocator: Allocator, s: *State, saved: *SavedState) !void
         paths.deinit();
     }
     for (paths.items) |path| {
-        try s.loadPlatform(saved, path);
+        try s.loadPlatform(path);
     }
     if (paths.items.len > 0) {
         s.setPlatform(paths.getLast());
@@ -1036,13 +1038,10 @@ pub fn main() !void {
     state = State.create(allocator);
     defer state.deinit();
 
-    saved_state = try SavedState.create(allocator, "user.json");
-    defer saved_state.deinit();
-
     // Do not need to deinit since it will be done when we deinit the whole
     // list of platforms.
     for (args.paths.items) |path| {
-        try state.loadPlatform(&saved_state, path);
+        try state.loadPlatform(path);
     }
     if (args.paths.items.len > 0) {
         state.setPlatform(args.paths.getLast());
@@ -1319,7 +1318,7 @@ pub fn main() !void {
         // will close.
 
         if (open or c.igIsKeyChordPressed_Nil(c.ImGuiMod_Ctrl | c.ImGuiKey_O)) {
-            try handleFileDialogue(allocator, &state, &saved_state);
+            try handleFileDialogue(allocator, &state);
         }
 
         if (close or c.igIsKeyChordPressed_Nil(c.ImGuiMod_Ctrl | c.ImGuiKey_W)) {
@@ -1343,13 +1342,12 @@ pub fn main() !void {
 
         // We have a DTB to load, but it might already be the current one.
         if (dtb_to_load) |d| {
-            try state.loadPlatform(&saved_state, d);
+            try state.loadPlatform(d);
             state.setPlatform(d);
         }
 
         if (exit) {
-            // TODO: need to actually deallocate everything first
-            std.process.exit(0);
+            break;
         }
 
         if (open_about) {
@@ -1384,12 +1382,10 @@ pub fn main() !void {
             _ = c.igBegin("Tree", null, c.ImGuiWindowFlags_NoCollapse | c.ImGuiWindowFlags_NoResize);
             c.igSetWindowSize_Vec2(state.windowSize(0.35, 1.0), 0);
 
-            // TODO: this logic is definetely wrong
             const expand_all = c.igButton("Expand All", .{});
             c.igSameLine(0, -1.0);
             const collapse_all = c.igButton("Collapse All", .{});
             var nodes_open: ?bool = null;
-
             if (expand_all) {
                 nodes_open = true;
             }
@@ -1617,21 +1613,21 @@ pub fn main() !void {
             c.igSetWindowSize_Vec2(state.windowSize(0.5, 0.5), 0);
             c.igText("Device Tree Detective");
             if (c.igButton("Open DTB file", .{})) {
-                try handleFileDialogue(allocator, &state, &saved_state);
+                try handleFileDialogue(allocator, &state);
             }
 
             c.igText("Recently opened");
             if (c.igButton("Clear items", .{})) {
-                for (saved_state.recently_opened.items) |entry| {
-                    saved_state.allocator.free(entry.path);
+                for (state.persistent.recently_opened.items) |entry| {
+                    state.persistent.allocator.free(entry.path);
                 }
-                saved_state.recently_opened.clearAndFree();
-                try saved_state.save();
+                state.persistent.recently_opened.clearAndFree();
+                try state.persistent.save();
             }
             var selected_item: ?usize = null;
             if (c.igBeginTable("##recent-dtbs", 1, 0, .{}, 0.0)) {
                 const timestamp = std.time.timestamp();
-                for (saved_state.recently_opened.items, 0..) |entry, i| {
+                for (state.persistent.recently_opened.items, 0..) |entry, i| {
                     c.igTableNextRow(0, 0);
                     const colour = c.igGetColorU32_Vec4(Colour.toVec(0xF2A05C));
                     c.igTableSetBgColor(c.ImGuiTableBgTarget_RowBg0 + 1, colour, -1);
@@ -1658,8 +1654,8 @@ pub fn main() !void {
             c.igEnd();
 
             if (selected_item) |i| {
-                const item: [:0]const u8 = saved_state.recently_opened.items[i].path;
-                try state.loadPlatform(&saved_state, item);
+                const item: [:0]const u8 = state.persistent.recently_opened.items[i].path;
+                try state.loadPlatform(item);
                 state.setPlatform(item);
             }
         }
