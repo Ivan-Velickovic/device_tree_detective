@@ -15,7 +15,6 @@
 * [ ] Linux device tree bindings map/link for a compatible string
 * [ ] Goto parent node
 * [ ] Goto interrupt-parent node, etc
-* [ ] keep track of last opened DTB?
 * [ ] import Linux at runtime and have it search that directroy for the list?
     * I would need to recursively iterate through every file, read all the contents
       and then match on the pattern
@@ -66,3 +65,16 @@ run transitive failure
 error: the following build command failed with exit code 1:
 /Users/ivanv/dev/dtb_viewer/.zig-cache/o/3aa2679eac9fdc05d9bbba627e0600d0/build /Users/ivanv/zigs/zig-macos-aarch64-0.15.0-dev.155+acfdad858/zig /Users/ivanv/zigs/zig-macos-aarch64-0.15.0-dev.155+acfdad858/lib /Users/ivanv/dev/dtb_viewer /Users/ivanv/dev/dtb_viewer/.zig-cache /Users/iv
 ```
+
+## Releasing
+
+1. Package macOS binary
+    * Understand .app vs .dmg etc
+    * Figure out XCode project stuff
+    * Notarise/sign
+2. Package Debian binary
+    * Not sure how to manage control files, maybe we should auto-generate them
+      by Zig build? Not sure.
+    * Need to figure out .desktop files.
+3. Windows binary
+    * Have no idea how to properly go about linking GLFW

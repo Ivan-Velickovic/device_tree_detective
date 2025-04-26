@@ -1,8 +1,6 @@
 /// Most of our device tree parsing and handling is done by an external
 /// dependency, 'dtb.zig'. This file is also called dtb.zig, which is a bit
 /// confusing.
-/// This module serves to do common higher-level things on the device tree
-/// for our device drivers, virtual machines etc.
 const std = @import("std");
 const dtb = @import("dtb");
 

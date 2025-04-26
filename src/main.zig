@@ -956,7 +956,7 @@ fn openFilePicker(allocator: Allocator) !std.ArrayList([:0]const u8) {
             try paths.append(path);
         }
     } else {
-        @compileError("unknown OS for file picker");
+        @compileError("unknown OS '" ++ @tagName(builtin.os.tag) ++ "' for file picker");
     }
 
     return paths;
