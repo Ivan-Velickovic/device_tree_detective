@@ -1148,8 +1148,8 @@ pub fn main() !void {
 
     // Load window icon
     if (builtin.os.tag == .macos) {
-        // This GLFW API is not valid on macOS, we have to go through Objective-C
-        // and the macOS API instead.
+        // This GLFW API for setting the window icon is not valid on macOS, instead
+        // we have to go through Objective-C and the Apple API instead.
         const NSApplication = objc.getClass("NSApplication").?;
         const application = NSApplication.msgSend(objc.Object, "sharedApplication", .{});
 
@@ -1176,6 +1176,24 @@ pub fn main() !void {
         icons[0].pixels = c.stbi_load_from_memory(@constCast(@ptrCast(logo.ptr)), logo.len, &icons[0].width, &icons[0].height, 0, 4);
         c.glfwSetWindowIcon(window, 1, &icons);
         c.stbi_image_free(icons[0].pixels);
+    }
+
+    if (builtin.os.tag == .macos) {
+        const NSApplication = objc.getClass("NSApplication").?;
+        const application = NSApplication.msgSend(objc.Object, "sharedApplication", .{});
+        const main_menu = application.getProperty(objc.Object, "mainMenu");
+        std.debug.assert(main_menu.value != null);
+
+        const NSString = objc.getClass("NSString").?;
+        const title_ns_string = NSString.msgSend(objc.Object, "stringWithUTF8String:", .{
+            @as([:0]const u8, "test_title"),
+        });
+
+        _ = application.msgSend(objc.Object, "addItemWithTitle:action:keyEquivalent:", .{
+            title_ns_string,
+            null,
+            null,
+        });
     }
 
     _ = c.glfwSetDropCallback(window, dropCallback);
