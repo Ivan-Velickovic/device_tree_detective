@@ -8,8 +8,8 @@
             .path = "./vendor/cimgui",
         },
         .dtb = .{
-            .url = "https://github.com/Ivan-Velickovic/dtb.zig/archive/1b95bdbe9c519a3627c11284a641372987df8425.tar.gz",
-            .hash = "dtb-0.0.0-gULdmaIWAgDVRNJFY-bN8AkbFZkDGyZ9a2-BR_sjuH7k",
+            .url = "https://github.com/Ivan-Velickovic/dtb.zig/archive/c82e532be6e24f7975c0765692839a6fb2ead265.tar.gz",
+            .hash = "dtb-0.0.0-gULdmUEYAgABM8shECeTT9SAgYnvmGOKLZsJDDnZo5Yy",
         },
         .objc = .{
             .url = "https://github.com/mitchellh/zig-objc/archive/3ab0d37c7d6b933d6ded1b3a35b6b60f05590a98.tar.gz",

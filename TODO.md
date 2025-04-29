@@ -10,6 +10,11 @@
 
 ## Improvements and QoL
 
+* [ ] Having multiple windows vs having multiple open files?
+    * If people open multiple instances of the application, we have issues with saving the
+      user-configuration since now there's concurrent access.
+      How does Sublime Text do this? Where you can open multiple windows but it's the same app
+      instance?
 * [ ] Need to handle recently opened files no longer existing on the file system
 * [ ] On macOS, Window loses focus after closing file picker, not sure why
 * [ ] Linux device tree bindings map/link for a compatible string

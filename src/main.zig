@@ -66,6 +66,22 @@ const zon: struct {
     const Dependency = struct { url: []const u8, hash: []const u8, lazy: bool = false };
 } = @import("build.zig.zon");
 
+const STYLE_COLOURS = .{
+    .{ .child_bg, 0x999999 },
+    .{ .popup_bg, 0xcccccc },
+    .{ .window_bg, 0xc0c0c0 },
+    .{ .text, 0x000000 },
+    .{ .title_bg, 0x999999 },
+    .{ .title_bg_active, 0x999999 },
+    .{ .menu_bar_bg, 0xffffff },
+    .{ .button, 0xba8120 },
+    .{ .button_hovered, 0xcf8c19 },
+    .{ .tab, 0xa6731c },
+    .{ .tab_selected, 0xc98a1c },
+    .{ .tab_hovered, 0xcf8c19 },
+    .{ .header_hovered, 0xc98a1c },
+};
+
 /// Note that this must match to cimgui.h definition of ImGuiCol_.
 /// I could have just used the C bindings but for convenience I made the
 /// colours into a Zig enum.
@@ -138,7 +154,7 @@ const Colour = enum(usize) {
             .x = @as(f32, @floatFromInt(r)) / 255.0,
             .y = @as(f32, @floatFromInt(g)) / 255.0,
             .z = @as(f32, @floatFromInt(b)) / 255.0,
-            .w = 0.5,
+            .w = 1,
         };
     }
 };
@@ -186,20 +202,43 @@ const State = struct {
     platforms: std.ArrayList(Platform),
     /// Current platform that we are inspecting
     platform: ?usize = null,
-    // TODO: use defaults based on the monitor size
-    window_width: u32 = 1920,
-    window_height: u32 = 1080,
+    /// Set during GLFW window runtime
+    window_width: u32 = undefined,
+    window_height: u32 = undefined,
     main_menu_bar_height: f32 = undefined,
     /// Tree view state
     highlighted_node: ?*dtb.Node = null,
     persistent: Persistent,
+    /// Compatible string maps
+    /// Linux driver paths
+    compatible_linux_drivers: CompatibleMap,
+    /// U-Boot driver paths
+    compatible_uboot_drivers: CompatibleMap,
+    /// YAML bindings (from linux/Documentation/devicetree/bindings)
+    compatible_linux_bindings: CompatibleMap,
 
-    pub fn create(allocator: Allocator) State {
+    pub fn init(allocator: Allocator) !State {
         return .{
             .allocator = allocator,
             .platforms = std.ArrayList(Platform).init(allocator),
             .persistent = Persistent.create(allocator, "user.json") catch @panic("TODO"),
+            // TODO: all these maps could actually be done at compile time
+            .compatible_linux_drivers = try CompatibleMap.create(allocator, linux_driver_compatible_txt),
+            .compatible_uboot_drivers = try CompatibleMap.create(allocator, uboot_driver_compatible_txt),
+            .compatible_linux_bindings = try CompatibleMap.create(allocator, linux_dt_binding_compatible_txt),
         };
+    }
+
+    pub fn deinit(s: *State) void {
+        for (s.platforms.items) |*p| {
+            p.deinit();
+        }
+        s.platforms.deinit();
+        s.persistent.deinit();
+
+        s.compatible_linux_drivers.deinit();
+        s.compatible_uboot_drivers.deinit();
+        s.compatible_linux_bindings.deinit();
     }
 
     pub fn setPlatform(s: *State, path: [:0]const u8) void {
@@ -340,14 +379,6 @@ const State = struct {
             .x = @as(f32, @floatFromInt(s.window_width)) * width,
             .y = (@as(f32, @floatFromInt(s.window_height)) - s.main_menu_bar_height) * height,
         };
-    }
-
-    pub fn deinit(s: *State) void {
-        for (s.platforms.items) |*p| {
-            p.deinit();
-        }
-        s.platforms.deinit();
-        s.persistent.deinit();
     }
 
     const Persistent = struct {
@@ -553,6 +584,8 @@ const UBOOT_GITHUB = "https://github.com/u-boot/u-boot/tree/master";
 const Platform = struct {
     allocator: Allocator,
     dtb_bytes: []const u8,
+    dts: std.ArrayListUnmanaged(u8),
+    dts_bytes: [:0]const u8,
     path: [:0]const u8,
     root: *dtb.Node,
     model: ?[]const u8,
@@ -634,9 +667,14 @@ const Platform = struct {
         var irq_controllers = std.ArrayList(*dtb.Node).init(allocator);
         try irqControllers(root, &irq_controllers);
 
+        var dts = decompileDtb(allocator, path) catch @panic("TODO");
+        try dts.appendSlice(allocator, "\x00");
+
         return .{
             .allocator = allocator,
             .dtb_bytes = dtb_bytes,
+            .dts = dts,
+            .dts_bytes = @ptrCast(dts.items),
             .path = try allocator.dupeZ(u8, path),
             .root = root,
             .model = root.prop(.Model),
@@ -663,6 +701,7 @@ const Platform = struct {
             allocator.free(platform.model_str);
         }
         allocator.free(platform.dtb_bytes);
+        platform.dts.deinit(platform.allocator);
     }
 };
 
@@ -859,6 +898,74 @@ fn stringLessThan(_: void, lhs: []const u8, rhs: []const u8) bool {
     return std.mem.order(u8, lhs, rhs) == .lt;
 }
 
+// fn nodeToSource(node: *dtb.Node, source: []const u8) []const u8 {
+
+// }
+
+fn displaySelectedNode(allocator: Allocator) !void {
+    c.igSetNextWindowPos(state.windowPos(0.5, 0), 0, .{});
+    _ = c.igBegin("Selected Node", null, c.ImGuiWindowFlags_NoCollapse | c.ImGuiWindowFlags_NoResize);
+    c.igSetWindowSize_Vec2(state.windowSize(0.5, 0.5), 0);
+    if (state.highlighted_node) |node| {
+        if (c.igBeginTabBar("Views", c.ImGuiTabBarFlags_None)) {
+            var name_bytes = std.ArrayList(u8).init(allocator);
+            defer name_bytes.deinit();
+            const node_name = try dtb.nodeNameFullPath(&name_bytes, node);
+            if (c.igBeginTabItem("Details", null, c.ImGuiTabItemFlags_None)) {
+                c.igText(node_name);
+                if (node.interruptParent()) |irq_parent| {
+                    if (c.igSmallButton("Go to IRQ parent")) {
+                        state.highlighted_node = irq_parent;
+                    }
+                }
+                if (node.prop(.Compatible)) |compatibles| {
+                    // TODO: do it for all compatibles, not just the first
+                    c.igText("Linux driver:");
+                    for (compatibles, 0..) |compatible, i| {
+                        if (state.compatible_linux_drivers.map.get(compatible)) |driver| {
+                            const id = fmt(allocator, "{s}##linux-{}", .{ driver, i });
+                            defer allocator.free(id);
+                            const url = fmt(allocator, "{s}/{s}", .{ LINUX_GITHUB, driver });
+                            defer allocator.free(url);
+                            c.igTextLinkOpenURL(id, url);
+                        }
+                    }
+                    if (state.compatible_linux_bindings.map.get(compatibles[0])) |driver| {
+                        c.igText("Linux device tree bindings:");
+                        c.igSameLine(0, -1.0);
+                        const id = fmt(allocator, "{s}##linux-dt-bindings", .{ driver });
+                        defer allocator.free(id);
+                        const url = fmt(allocator, "{s}/{s}", .{ LINUX_GITHUB, driver });
+                        defer allocator.free(url);
+                        c.igTextLinkOpenURL(id, url);
+                    }
+                    if (state.compatible_uboot_drivers.map.get(compatibles[0])) |driver| {
+                        c.igText("U-Boot driver:");
+                        c.igSameLine(0, -1.0);
+                        const id = fmt(allocator, "{s}##uboot", .{ driver });
+                        defer allocator.free(id);
+                        const url = fmt(allocator, "{s}/{s}", .{ UBOOT_GITHUB, driver });
+                        defer allocator.free(url);
+                        c.igTextLinkOpenURL(id, url);
+                    }
+                }
+                for (node.props) |prop| {
+                    const prop_fmt = fmt(allocator, "{any}", .{ prop });
+                    defer allocator.free(prop_fmt);
+                    c.igText(prop_fmt);
+                }
+                c.igEndTabItem();
+            }
+            if (c.igBeginTabItem("Source", null, c.ImGuiTabItemFlags_None)) {
+                c.igText(state.getPlatform().?.dts_bytes);
+                c.igEndTabItem();
+            }
+        }
+        c.igEndTabBar();
+    }
+    c.igEnd();
+}
+
 fn displayExampleDtbs(label: [:0]const u8, dtbs: ?std.ArrayList([:0]const u8), selected: *?[:0]const u8) void {
     if (dtbs != null and c.igBeginMenu(label, true)) {
         const filter = c.ImGuiTextFilter_ImGuiTextFilter(null);
@@ -1008,6 +1115,10 @@ const Args = struct {
     }
 };
 
+fn glfwWindowSizeCallback(_: ?*c.GLFWwindow, width: c_int, height: c_int) callconv(.C) void {
+    std.log.info("window size changed to {}px by {}px", .{ width, height });
+}
+
 pub fn main() !void {
     log.info("starting Device Tree Detective version {s}", .{ zon.version });
     log.info("compiled with Zig {s}", .{ builtin.zig_version_string });
@@ -1035,7 +1146,7 @@ pub fn main() !void {
         });
     }
 
-    state = State.create(allocator);
+    state = try State.init(allocator);
     defer state.deinit();
 
     // Do not need to deinit since it will be done when we deinit the whole
@@ -1046,14 +1157,6 @@ pub fn main() !void {
     if (args.paths.items.len > 0) {
         state.setPlatform(args.paths.getLast());
     }
-
-    // TODO: all these maps could actually be done at compile time
-    var linux_driver_compatible = try CompatibleMap.create(allocator, linux_driver_compatible_txt);
-    defer linux_driver_compatible.deinit();
-    var linux_dt_binding_compatible = try CompatibleMap.create(allocator, linux_dt_binding_compatible_txt);
-    defer linux_dt_binding_compatible.deinit();
-    var uboot_driver_compatible = try CompatibleMap.create(allocator, uboot_driver_compatible_txt);
-    defer uboot_driver_compatible.deinit();
 
     const sel4_example_dtbs: ?std.ArrayList([:0]const u8) = exampleDtbs(allocator, EXAMPLE_DTBS ++ "/sel4") catch |e| blk: {
         switch (e) {
@@ -1140,6 +1243,8 @@ pub fn main() !void {
     }
     defer c.glfwDestroyWindow(window);
 
+    _ = c.glfwSetWindowSizeCallback(window, glfwWindowSizeCallback);
+
     var window_width: c_int = undefined;
     var window_height: c_int = undefined;
 
@@ -1178,24 +1283,6 @@ pub fn main() !void {
         c.stbi_image_free(icons[0].pixels);
     }
 
-    if (builtin.os.tag == .macos) {
-        const NSApplication = objc.getClass("NSApplication").?;
-        const application = NSApplication.msgSend(objc.Object, "sharedApplication", .{});
-        const main_menu = application.getProperty(objc.Object, "mainMenu");
-        std.debug.assert(main_menu.value != null);
-
-        const NSString = objc.getClass("NSString").?;
-        const title_ns_string = NSString.msgSend(objc.Object, "stringWithUTF8String:", .{
-            @as([:0]const u8, "test_title"),
-        });
-
-        _ = application.msgSend(objc.Object, "addItemWithTitle:action:keyEquivalent:", .{
-            title_ns_string,
-            null,
-            null,
-        });
-    }
-
     _ = c.glfwSetDropCallback(window, dropCallback);
 
     // if (!procs.init(c.glfwGetProcAddress)) return error.InitFailed;
@@ -1217,7 +1304,11 @@ pub fn main() !void {
         // TODO: this does largely fix the blurriness seen on macOS.
         // Not sure if it's the full solution. There's also https://github.com/ocornut/imgui/blob/master/docs/FONTS.md#using-freetype-rasterizer-imgui_freetype
         // and some comments on the RasterizerDensity field definition in imgui.
-        font_cfg.*.RasterizerDensity = 2.0;
+        // NOTE: looks like this does mess up low-resolution screens on macOS, e.g my
+        // 1080p monitor used as an external display.
+        // Therefore, another consideration if we continue to use RasterizerDensity is that we need to
+        // update this value based on the current monitor, which could change over the program's execution.
+        // font_cfg.*.RasterizerDensity = 2.0;
     }
     // Stop ImGui from freeing our font memory.
     font_cfg.*.FontDataOwnedByAtlas = false;
@@ -1237,19 +1328,9 @@ pub fn main() !void {
     const scale: f32 = if (args.high_dpi) 2 else 1.25;
     c.ImGuiStyle_ScaleAllSizes(style, scale);
 
-    setColour(.child_bg, .{ .x = 0.6, .y = 0.6, .z = 0.6, .w = 1 });
-    setColour(.popup_bg, .{ .x = 0.8, .y = 0.8, .z = 0.8, .w = 1 });
-    setColour(.window_bg, .{ .x = 0.751, .y = 0.751, .z = 0.751, .w = 1 });
-    setColour(.text, .{ .x = 0, .y = 0, .z = 0, .w = 1 });
-    setColour(.title_bg, .{ .x = 0.6, .y = 0.6, .z = 0.6, .w = 1 });
-    setColour(.title_bg_active, .{ .x = 0.6, .y = 0.6, .z = 0.6, .w = 1 });
-    setColour(.menu_bar_bg, .{ .x = 1, .y = 1, .z = 1, .w = 1 });
-    setColour(.button, .{ .x = 0.729, .y = 0.506, .z = 0.125, .w = 1 });
-    setColour(.button_hovered, .{ .x = 0.812, .y = 0.549, .z = 0.098, .w = 1 });
-    setColour(.tab, .{ .x = 0.651, .y = 0.451, .z = 0.110, .w = 1 });
-    setColour(.tab_selected, .{ .x = 0.788, .y = 0.541, .z = 0.110, .w = 1 });
-    setColour(.tab_hovered, .{ .x = 0.812, .y = 0.549, .z = 0.098, .w = 1 });
-    setColour(.header_hovered, .{ .x = 0.788, .y = 0.541, .z = 0.110, .w = 1 });
+    inline for (STYLE_COLOURS) |colour| {
+        setColour(colour[0], Colour.toVec(colour[1]));
+    }
     // ===== Styling End =======
 
     // TODO: move this into platform struct
@@ -1290,34 +1371,34 @@ pub fn main() !void {
                     close_all = true;
                 }
                 c.igSeparator();
-                if (c.igBeginMenu("Example DTBs", true)) {
-                    displayExampleDtbs("seL4", sel4_example_dtbs, &dtb_to_load);
-                    displayExampleDtbs("Linux", linux_example_dtbs, &dtb_to_load);
-                    c.igEndMenu();
-                }
-                if (builtin.mode == .Debug) {
-                    if (c.igBeginMenu("Debug", true)) {
-                        if (c.igBeginMenu("Colours", true)) {
-                            const sz = c.igGetTextLineHeight();
-                            for (0..c.ImGuiCol_COUNT) |i| {
-                                const name = c.igGetStyleColorName(@intCast(i));
-                                var p: c.ImVec2 = undefined;
-                                c.igGetCursorScreenPos(&p);
-                                c.ImDrawList_AddRectFilled(c.igGetWindowDrawList(), p, .{ .x = p.x + sz, .y = p.y + sz }, c.igGetColorU32_Col(@intCast(i), 1), 0, 0);
-                                c.igDummy(.{ .x = sz, .y = sz });
-                                c.igSameLine(0, -1.0);
-                                _ = c.igMenuItem_Bool(name, null, false, true);
-                            }
-                            c.igEndMenu();
-                        }
-                        c.igEndMenu();
-                    }
-                }
-                c.igSeparator();
+
                 if (c.igMenuItem_Bool("Exit", null, false, true)) {
                     exit = true;
                 }
                 c.igEndMenu();
+            }
+            if (c.igBeginMenu("Example DTBs", true)) {
+                displayExampleDtbs("seL4", sel4_example_dtbs, &dtb_to_load);
+                displayExampleDtbs("Linux", linux_example_dtbs, &dtb_to_load);
+                c.igEndMenu();
+            }
+            if (builtin.mode == .Debug) {
+                if (c.igBeginMenu("Debug", true)) {
+                    if (c.igBeginMenu("Colours", true)) {
+                        const sz = c.igGetTextLineHeight();
+                        for (0..c.ImGuiCol_COUNT) |i| {
+                            const name = c.igGetStyleColorName(@intCast(i));
+                            var p: c.ImVec2 = undefined;
+                            c.igGetCursorScreenPos(&p);
+                            c.ImDrawList_AddRectFilled(c.igGetWindowDrawList(), p, .{ .x = p.x + sz, .y = p.y + sz }, c.igGetColorU32_Col(@intCast(i), 1), 0, 0);
+                            c.igDummy(.{ .x = sz, .y = sz });
+                            c.igSameLine(0, -1.0);
+                            _ = c.igMenuItem_Bool(name, null, false, true);
+                        }
+                        c.igEndMenu();
+                    }
+                    c.igEndMenu();
+                }
             }
             if (c.igBeginMenu("Help", true)) {
                 if (c.igMenuItem_Bool("About", null, false, true)) {
@@ -1418,60 +1499,7 @@ pub fn main() !void {
             state.highlighted_node = try nodeTree(allocator, filter, platform.root.children, state.highlighted_node, nodes_open);
             c.igEnd();
 
-            // === Selected Node Window ===
-            c.igSetNextWindowPos(state.windowPos(0.5, 0), 0, .{});
-
-            _ = c.igBegin("Selected Node", null, c.ImGuiWindowFlags_NoCollapse | c.ImGuiWindowFlags_NoResize);
-            c.igSetWindowSize_Vec2(state.windowSize(0.5, 0.5), 0);
-            if (state.highlighted_node) |node| {
-                var name_bytes = std.ArrayList(u8).init(allocator);
-                defer name_bytes.deinit();
-                const node_name = try dtb.nodeNameFullPath(&name_bytes, node);
-                c.igText(node_name);
-                if (node.interruptParent()) |irq_parent| {
-                    if (c.igButton("Go to IRQ parent", .{})) {
-                        state.highlighted_node = irq_parent;
-                    }
-                }
-                if (node.prop(.Compatible)) |compatibles| {
-                    // TODO: do it for all compatibles, not just the first
-                    c.igText("Linux driver:");
-                    for (compatibles, 0..) |compatible, i| {
-                        if (linux_driver_compatible.map.get(compatible)) |driver| {
-                            const id = fmt(allocator, "{s}##linux-{}", .{ driver, i });
-                            defer allocator.free(id);
-                            const url = fmt(allocator, "{s}/{s}", .{ LINUX_GITHUB, driver });
-                            defer allocator.free(url);
-                            c.igTextLinkOpenURL(id, url);
-                        }
-                    }
-                    if (linux_dt_binding_compatible.map.get(compatibles[0])) |driver| {
-                        c.igText("Linux device tree bindings:");
-                        c.igSameLine(0, -1.0);
-                        const id = fmt(allocator, "{s}##linux-dt-bindings", .{ driver });
-                        defer allocator.free(id);
-                        const url = fmt(allocator, "{s}/{s}", .{ LINUX_GITHUB, driver });
-                        defer allocator.free(url);
-                        c.igTextLinkOpenURL(id, url);
-                    }
-                    if (uboot_driver_compatible.map.get(compatibles[0])) |driver| {
-                        c.igText("U-Boot driver:");
-                        c.igSameLine(0, -1.0);
-                        const id = fmt(allocator, "{s}##uboot", .{ driver });
-                        defer allocator.free(id);
-                        const url = fmt(allocator, "{s}/{s}", .{ UBOOT_GITHUB, driver });
-                        defer allocator.free(url);
-                        c.igTextLinkOpenURL(id, url);
-                    }
-                }
-                for (node.props) |prop| {
-                    const prop_fmt = fmt(allocator, "{any}", .{ prop });
-                    defer allocator.free(prop_fmt);
-                    c.igText(prop_fmt);
-                }
-            }
-            c.igEnd();
-            // ===========================
+            try displaySelectedNode(allocator);
 
             // === Details Window ===
             c.igSetNextWindowPos(state.windowPos(0.5, 0.5), 0, .{});
