@@ -10,6 +10,7 @@
 
 ## Improvements and QoL
 
+* [ ] Memory regions list should definitely be represented as a table instead
 * [ ] When filtering an example DTB, selection is still clunky and does not work that well.
 * [ ] When filtering on the tree view, we should be looking at the expanded tree view
       of the parent nodes I think e.g the 'soc' node should also show up when we search 'ethernet'

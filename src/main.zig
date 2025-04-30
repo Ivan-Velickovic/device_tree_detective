@@ -322,7 +322,7 @@ const State = struct {
             var recently_opened = try std.ArrayList(RecentlyOpened).initCapacity(allocator, parsed.value.recently_opened.len);
             for (parsed.value.recently_opened) |entry| {
                 std.fs.cwd().access(entry.path, .{}) catch |e| {
-                    std.log.info("cannot access recently opened file '{s}' ({any}), dropping from list", .{ entry.path, e });
+                    log.info("cannot access recently opened file '{s}' ({any}), dropping from list", .{ entry.path, e });
                     continue;
                 };
                 recently_opened.appendAssumeCapacity(.{
@@ -387,9 +387,9 @@ fn dropCallback(_: ?*c.GLFWwindow, count: c_int, paths: [*c][*c]const u8) callco
 /// time of writing is less than 200KiB.
 const DTB_DECOMPILE_MAX_OUTPUT = 1024 * 1024 * 16;
 
-fn errorCallback(_: c_int, _: [*c]const u8) callconv(.C) void {
+fn glfwErrorCallback(_: c_int, _: [*c]const u8) callconv(.C) void {
     // TODO:
-    // std.log.err("GLFW Error '{}'': {s}", .{ errn, str });
+    // log.err("GLFW Error '{}'': {s}", .{ errn, str });
 }
 
 /// Caller owns allocated formatted string
@@ -489,6 +489,10 @@ const Platform = struct {
         addr: u64,
         size: u64,
         node: *dtb.Node,
+
+        pub fn asc(_: void, a: Region, b: Region) bool {
+            return a.addr < b.addr;
+        }
     };
 
     pub const MainMemory = struct {
@@ -543,6 +547,7 @@ const Platform = struct {
 
         var regions = std.ArrayList(Region).init(allocator);
         try regionsAdd(root, &regions);
+        std.mem.sort(Region, regions.items, {}, Region.asc);
 
         var irq_controllers = std.ArrayList(*dtb.Node).init(allocator);
         try irqControllers(root, &irq_controllers);
@@ -997,11 +1002,11 @@ const Args = struct {
 };
 
 fn glfwWindowSizeCallback(_: ?*c.GLFWwindow, width: c_int, height: c_int) callconv(.C) void {
-    std.log.info("window size changed to {}px by {}px", .{ width, height });
+    log.info("window size changed to {}px by {}px", .{ width, height });
 }
 
 pub fn main() !void {
-    log.info("starting Device Tree Detective version {s}", .{ zon.version });
+    log.info("starting Device Tree Detective version {s} on {s}", .{ zon.version, @tagName(builtin.os.tag) });
     log.info("compiled with Zig {s}", .{ builtin.zig_version_string });
     log.info("GLFW version {s}", .{ c.glfwGetVersionString() });
 
@@ -1097,7 +1102,7 @@ pub fn main() !void {
     }
     // var procs: gl.ProcTable = undefined;
 
-    _ = c.glfwSetErrorCallback(errorCallback);
+    _ = c.glfwSetErrorCallback(glfwErrorCallback);
 
     if (c.glfwInit() != c.GLFW_TRUE) {
         return;
@@ -1171,8 +1176,6 @@ pub fn main() !void {
     // gl.makeProcTableCurrent(&procs);
     // defer gl.makeProcTableCurrent(null);
 
-    // TODO: not sure what to do about CIMGUI_CHECKVERSION
-    // _ = c.CIMGUI_CHECKVERSION();
     _ = c.igCreateContext(null);
     defer c.igDestroyContext(null);
 
@@ -1215,9 +1218,10 @@ pub fn main() !void {
     }
     // ===== Styling End =======
 
-    // TODO: move this into platform struct
+    // TODO: move this into state struct?
     var filter_ignore_disabled = false;
     var fitler_include_props = true;
+    var hovered_rect_index: ?usize = null;
     while (c.glfwWindowShouldClose(window) != c.GLFW_TRUE) {
         c.glfwPollEvents();
 
@@ -1341,11 +1345,11 @@ pub fn main() !void {
         c.igSetNextWindowPos(state.windowPos(0.5, 0.5), 0, .{ .x = 0.5, .y = 0.5 });
         if (c.igBeginPopupModal("About", &p_open, c.ImGuiWindowFlags_AlwaysAutoResize | c.ImGuiWindowFlags_NoResize | c.ImGuiWindowFlags_NoMove)) {
             c.igText(ABOUT);
-            c.igTextLinkOpenURL("Home page", "ivanvelickovic.com/devicetreedetective");
+            c.igTextLinkOpenURL("Home Page", "https://ivanvelickovic.com/devicetreedetective");
             c.igSameLine(0, -1.0);
             c.igTextLinkOpenURL("Source Code", "https://github.com/Ivan-Velickovic/device_tree_detective");
             c.igSameLine(0, -1.0);
-            c.igTextLinkOpenURL("Report issue", "TODO");
+            c.igTextLinkOpenURL("Report Issue", "https://github.com/Ivan-Velickovic/device_tree_detective/issues");
             c.igSeparator();
             c.igText("This program is intended to help people explore and visualise Device Tree Blob files.");
             c.igText("Created by Ivan Velickovic in 2025.");
@@ -1553,12 +1557,79 @@ pub fn main() !void {
                     c.igEndTabItem();
                 }
                 if (c.igBeginTabItem("Memory", null, c.ImGuiTabItemFlags_None)) {
-                    var buf = [_:0]u8{0} ** 100;
-                    _ = c.igInputTextWithHint("input text", "e.g 0x30400000", &buf, buf.len, 0, memoryInputTextCallback, null);
-                    for (platform.regions.items) |reg| {
-                        const reg_fmt = fmt(allocator, "[0x{x:0>12}..0x{x:0>12}], {s}", .{ reg.addr, reg.addr + reg.size, reg.node.name });
-                        defer allocator.free(reg_fmt);
-                        c.igText(reg_fmt);
+                    if (c.igBeginTabBar("Views", c.ImGuiTabBarFlags_None)) {
+                        if (c.igBeginTabItem("Regions", null, c.ImGuiTabItemFlags_None)) {
+                            for (platform.regions.items) |reg| {
+                                const reg_fmt = fmt(allocator, "[0x{x:0>12}..0x{x:0>12}], {s}", .{ reg.addr, reg.addr + reg.size, reg.node.name });
+                                defer allocator.free(reg_fmt);
+                                c.igText(reg_fmt);
+                            }
+                            c.igEndTabItem();
+                        }
+                        if (c.igBeginTabItem("Map", null, c.ImGuiTabItemFlags_None)) {
+                            const canvas_sz = state.windowSize(0.5, 1.0);
+                            _ = c.igBeginChild_Str("memory_map_child", canvas_sz, c.ImGuiChildFlags_None, c.ImGuiWindowFlags_HorizontalScrollbar);
+
+                            const draw_list = c.igGetWindowDrawList();
+                            var canvas_p0: c.ImVec2 = undefined;
+                            c.igGetCursorScreenPos(&canvas_p0);
+
+                            const canvas_p1: c.ImVec2 = .{ .x = canvas_p0.x + canvas_sz.x, .y = canvas_p0.y + canvas_sz.y };
+                            c.ImDrawList_AddRectFilled(draw_list, canvas_p0, canvas_p1, 0xffaaaaaa, 0, 0);
+
+                            // c.ImDrawList_PushClipRect(draw_list, canvas_p0, canvas_p1, true);
+
+                            var drawed_regs: usize = 0;
+                            var hovered_any = false;
+                            for (platform.regions.items, 0..) |reg, i| {
+                                if (reg.addr == 0 or reg.size == 0) {
+                                    continue;
+                                }
+
+                                const box_size: c.ImVec2 = .{ .x = 150, .y = 100 };
+                                const box_start: c.ImVec2 = .{ .x = canvas_p0.x + 20, .y = canvas_p0.y + 20 + box_size.y * @as(f32, @floatFromInt(drawed_regs)) };
+                                const box_end: c.ImVec2 = .{ .x = box_start.x + box_size.x, .y = box_start.y + box_size.y };
+                                const fill: u32 = blk: {
+                                    if (hovered_rect_index != null and hovered_rect_index.? == i) {
+                                        break :blk 0xffdbb13f;
+                                    } else if (drawed_regs % 2 == 0) {
+                                        break :blk 0xffdddddd;
+                                    } else {
+                                        break :blk 0xffeeeeee;
+                                    }
+                                };
+                                c.ImDrawList_AddRectFilled(draw_list, box_start, box_end, fill, 0, 0);
+
+                                const text = fmt(allocator, "{s}", .{ reg.node.name });
+                                defer allocator.free(text);
+
+                                var text_size: c.ImVec2 = undefined;
+                                c.igCalcTextSize(&text_size, text, null, false, 0.0);
+
+                                const text_pos: c.ImVec2 = .{
+                                    .x = box_start.x + (box_size.x / 2.0) - (text_size.x / 2.0),
+                                    .y = box_start.y + (box_size.y / 2.0) - (text_size.y / 2.0)
+                                };
+                                c.ImDrawList_AddText_Vec2(draw_list, text_pos, 0xff000000, text, null);
+
+                                if (c.igIsMouseHoveringRect(box_start, box_end, false)) {
+                                    state.highlighted_node = reg.node;
+                                    hovered_rect_index = i;
+                                    hovered_any = true;
+                                }
+
+                                drawed_regs += 1;
+                            }
+
+                            if (!hovered_any) {
+                                hovered_rect_index = null;
+                            }
+
+                            // c.ImDrawList_PopClipRect(draw_list);
+                            c.igEndChild();
+                            c.igEndTabItem();
+                        }
+                        c.igEndTabBar();
                     }
                     c.igEndTabItem();
                 }
