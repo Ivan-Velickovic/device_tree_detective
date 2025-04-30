@@ -10,6 +10,9 @@
 
 ## Improvements and QoL
 
+* [ ] When filtering an example DTB, selection is still clunky and does not work that well.
+* [ ] When filtering on the tree view, we should be looking at the expanded tree view
+      of the parent nodes I think e.g the 'soc' node should also show up when we search 'ethernet'
 * [ ] Having multiple windows vs having multiple open files?
     * If people open multiple instances of the application, we have issues with saving the
       user-configuration since now there's concurrent access.
@@ -53,6 +56,44 @@
 * [ ] Resizable windows - see child windows section of demo
 * [ ] paths should be prefixed with ~ rather than /Users/ivanv/ or /home/ivanv etc
 * [ ] native menu bar for macOS
+
+```
+info: using existing user configuration 'user.json'
+thread 2002631 panic: integer cast truncated bits
+/Users/ivanv/dev/device_tree_detective/src/main.zig:595:25: 0x104a89653 in regionsAdd (Device Tree Detective)
+                .addr = @intCast(r[0]),
+                        ^
+/Users/ivanv/dev/device_tree_detective/src/main.zig:589:23: 0x104a8951f in regionsAdd (Device Tree Detective)
+        try regionsAdd(child, regions);
+                      ^
+/Users/ivanv/dev/device_tree_detective/src/main.zig:589:23: 0x104a8951f in regionsAdd (Device Tree Detective)
+        try regionsAdd(child, regions);
+                      ^
+/Users/ivanv/dev/device_tree_detective/src/main.zig:589:23: 0x104a8951f in regionsAdd (Device Tree Detective)
+        try regionsAdd(child, regions);
+                      ^
+/Users/ivanv/dev/device_tree_detective/src/main.zig:589:23: 0x104a8951f in regionsAdd (Device Tree Detective)
+        try regionsAdd(child, regions);
+                      ^
+/Users/ivanv/dev/device_tree_detective/src/main.zig:589:23: 0x104a8951f in regionsAdd (Device Tree Detective)
+        try regionsAdd(child, regions);
+                      ^
+/Users/ivanv/dev/device_tree_detective/src/main.zig:544:23: 0x104a8d983 in init (Device Tree Detective)
+        try regionsAdd(root, &regions);
+                      ^
+/Users/ivanv/dev/device_tree_detective/src/main.zig:175:43: 0x104a8f86b in loadPlatform (Device Tree Detective)
+        const platform = try Platform.init(s.allocator, path);
+                                          ^
+/Users/ivanv/dev/device_tree_detective/src/main.zig:1324:35: 0x104a96f63 in main (Device Tree Detective)
+            try state.loadPlatform(d);
+                                  ^
+/Users/ivanv/zigs/zig-macos-aarch64-0.14.0/lib/std/start.zig:656:37: 0x104a9cadb in main (Device Tree Detective)
+            const result = root.main() catch |err| {
+                                    ^
+???:?:?: 0x188dd2b4b in ??? (???)
+???:?:?: 0x0 in ??? (???)
+run
+```
 
 ```
 error: GLFW Error '65544'': Cocoa: Failed to query display mode

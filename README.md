@@ -1,3 +1,6 @@
+I'm not going to lie, I do not like Device Trees.
+
+
 ## linux_compatible_list.txt
 
 Within the root of the Linux source code:

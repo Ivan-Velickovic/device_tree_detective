@@ -132,4 +132,18 @@ pub fn build(b: *std.Build) void {
 
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
+
+    // Testing
+    const test_mod = b.createModule(.{
+        .root_source_file = b.path("src/test.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const tests = b.addTest(.{
+        .root_module = test_mod,
+    });
+    tests.root_module.addImport("dtb", dtb_mod);
+    const run_tests = b.addRunArtifact(tests);
+    const test_step = b.step("test", "Run unit tests");
+    test_step.dependOn(&run_tests.step);
 }

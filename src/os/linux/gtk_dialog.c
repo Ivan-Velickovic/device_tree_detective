@@ -19,7 +19,7 @@ char *gtk_file_picker(void) {
                                           GTK_FILE_CHOOSER_ACTION_OPEN,
                                           "_Cancel", GTK_RESPONSE_CANCEL,
                                           "_Open", GTK_RESPONSE_ACCEPT,
-                                          NULL );
+                                          NULL);
     if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) {
         filename = gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(dialog));
     }
