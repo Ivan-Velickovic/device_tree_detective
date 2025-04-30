@@ -82,10 +82,10 @@ pub fn build(b: *std.Build) void {
 
     exe.addCSourceFile(.{ .file = b.path("src/ig_extern.c") });
     if (target.result.os.tag == .linux) {
-        exe.addCSourceFile(.{ .file = b.path("src/linux/gtk_dialog.c") });
+        exe.addCSourceFile(.{ .file = b.path("src/os/linux/gtk_dialog.c") });
     }
     if (target.result.os.tag == .windows) {
-        exe.addCSourceFile(.{ .file = b.path("src/windows/dialog.cpp") });
+        exe.addCSourceFile(.{ .file = b.path("src/os/windows/dialog.cpp") });
     }
 
     const imgui_path = cimgui_dep.path("imgui/");
