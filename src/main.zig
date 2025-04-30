@@ -1586,7 +1586,7 @@ pub fn main() !void {
                                     continue;
                                 }
 
-                                const box_size: c.ImVec2 = .{ .x = 150, .y = 100 };
+                                const box_size: c.ImVec2 = .{ .x = 150, .y = 50 };
                                 const box_start: c.ImVec2 = .{ .x = canvas_p0.x + 20, .y = canvas_p0.y + 20 + box_size.y * @as(f32, @floatFromInt(drawed_regs)) };
                                 const box_end: c.ImVec2 = .{ .x = box_start.x + box_size.x, .y = box_start.y + box_size.y };
                                 const fill: u32 = blk: {
