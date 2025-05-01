@@ -87,7 +87,7 @@ pub const Colour = enum(usize) {
     nav_windowing_dim_bg,
     modal_window_dim_bg,
 
-    pub fn toVec(comptime hex: u24) c.ImVec4 {
+    pub fn vec(hex: u24) c.ImVec4 {
         const r = (hex & 0xff0000) >> 16;
         const g = (hex & 0x00ff00) >> 8;
         const b = hex & 0x0000ff;
@@ -100,16 +100,24 @@ pub const Colour = enum(usize) {
         };
     }
 
-    pub fn push(colour: Colour, comptime hex: u24) void {
-        c.igPushStyleColor_Vec4(@intCast(@intFromEnum(colour)), Colour.toVec(hex));
+    pub fn U32(hex: u24) u32 {
+        const r = (hex & 0xff0000) >> 16;
+        const g = (hex & 0x00ff00) >> 8;
+        const b = hex & 0x0000ff;
+
+        return (@as(u32, 0xff) << 24) | (b << 16) | (g << 8) | (r);
+    }
+
+    pub fn push(colour: Colour, hex: u24) void {
+        c.igPushStyleColor_Vec4(@intCast(@intFromEnum(colour)), Colour.vec(hex));
     }
 
     pub fn pop(count: c_int) void {
         c.igPopStyleColor(count);
     }
 
-    pub fn setStyle(colour: Colour, comptime hex: u24) void {
-        c.igGetStyle().*.Colors[@intFromEnum(colour)] = toVec(hex);
+    pub fn setStyle(colour: Colour, hex: u24) void {
+        c.igGetStyle().*.Colors[@intFromEnum(colour)] = vec(hex);
     }
 };
 
@@ -122,4 +130,14 @@ pub fn secondaryButton(text: [:0]const u8) bool {
     defer Colour.pop(1);
 
     return c.igSmallButton(text);
+}
+
+pub fn centerText(text: [:0]const u8, start: c.ImVec2, size: c.ImVec2) c.ImVec2 {
+    var text_size: c.ImVec2 = undefined;
+    c.igCalcTextSize(&text_size, text, null, false, 0.0);
+
+    return .{
+        .x = start.x + (size.x / 2.0) - (text_size.x / 2.0),
+        .y = start.y + (size.y / 2.0) - (text_size.y / 2.0),
+    };
 }

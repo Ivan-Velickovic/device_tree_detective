@@ -1192,7 +1192,7 @@ pub fn main() !void {
         // 1080p monitor used as an external display.
         // Therefore, another consideration if we continue to use RasterizerDensity is that we need to
         // update this value based on the current monitor, which could change over the program's execution.
-        // font_cfg.*.RasterizerDensity = 2.0;
+        font_cfg.*.RasterizerDensity = 2.0;
     }
     // Stop ImGui from freeing our font memory.
     font_cfg.*.FontDataOwnedByAtlas = false;
@@ -1221,7 +1221,9 @@ pub fn main() !void {
     // TODO: move this into state struct?
     var filter_ignore_disabled = false;
     var fitler_include_props = true;
-    var hovered_rect_index: ?usize = null;
+    var hovered_reg_box_index: ?usize = null;
+    var hovered_irq_controller_index: ?usize = null;
+    var hovered_irq_node_index: ?usize = null;
     while (c.glfwWindowShouldClose(window) != c.GLFW_TRUE) {
         c.glfwPollEvents();
 
@@ -1485,6 +1487,7 @@ pub fn main() !void {
 
                             c.ImDrawList_PushClipRect(draw_list, canvas_p0, canvas_p1, true);
 
+                            var hovered_any = false;
                             for (platform.irq_controllers.items, 0..) |irq_controller, i| {
                                 var name_bytes = std.ArrayList(u8).init(allocator);
                                 defer name_bytes.deinit();
@@ -1492,10 +1495,27 @@ pub fn main() !void {
                                 var name_size: c.ImVec2 = undefined;
                                 c.igCalcTextSize(&name_size, name, null, false, 0.0);
 
+                                const fill: u32 = blk: {
+                                    if (hovered_irq_controller_index != null and hovered_irq_controller_index.? == i) {
+                                        break :blk Colour.U32(0xdbb13f);
+                                    } else {
+                                        break :blk 0xffdddddd;
+                                    }
+                                };
+
                                 const p0: c.ImVec2 = .{ .x = canvas_p0.x + 10, .y = canvas_p0.y + 10 + (75 * @as(f32, @floatFromInt(i))) };
                                 const size: c.ImVec2 = .{ .x = @max(130, name_size.x + 20), .y = 50 };
                                 const p1: c.ImVec2 = .{ .x = p0.x + size.x, .y = p0.y + size.y };
-                                c.ImDrawList_AddRectFilled(draw_list, p0, p1, 0xffdddddd, 0, 0);
+                                c.igPushStyleVar_Float(c.ImGuiStyleVar_FrameBorderSize, 1.0);
+                                // c.ImDrawList_AddRectFilled(draw_list, p0, p1, fill, 0, 0);
+                                c.igRenderFrame(p0, p1, fill, true, 0);
+                                c.igPopStyleVar(1);
+
+                                if (c.igIsMouseHoveringRect(p0, p1, false)) {
+                                    state.highlighted_node = irq_controller;
+                                    hovered_irq_controller_index = i;
+                                    hovered_any = true;
+                                }
 
                                 {
                                     const text_start_x = p0.x + (size.x / 2) - (name_size.x / 2);
@@ -1510,40 +1530,81 @@ pub fn main() !void {
                                     }
                                 }
 
-                                const line_spacing: f32 = 30;
+                                const irq_size: c.ImVec2 = .{ .x = 250, .y = 30 };
+                                const irq_spacing: f32 = 10;
+                                const irq_diff_y = irq_size.y + irq_spacing;
                                 // Get the middle, and then subtract half of the total space of all the lines
-                                // const line_y = (p0.y + size.y / 2) - ((@as(f32, @floatFromInt(num_lines)) * line_spacing) / 2);
-                                const line_x = p0.x + (size.x / 2);
-                                const line_y = (p1.y + 30);
+                                const irq_x = p0.x + (size.x / 2);
+                                const irq_y = (p1.y + 30);
 
-                                var curr_line: usize = 0;
-                                for (platform.irqs.items) |irq| {
+                                var curr_irq: usize = 0;
+                                const border_size = 1.0;
+                                for (platform.irqs.items, 0..) |irq, j| {
                                     if (irq.node.interruptParent() == irq_controller) {
-                                        const line_start: c.ImVec2 = .{ .x = line_x , .y = line_y + @as(f32, @floatFromInt(curr_line)) * line_spacing };
-                                        const line_end: c.ImVec2 = .{ .x = line_start.x + 200, .y = line_start.y };
-                                        c.ImDrawList_AddLine(draw_list, line_start, line_end, 0xff000000, 2);
+                                        const irq_start: c.ImVec2 = .{ .x = irq_x + 20 , .y = irq_y + @as(f32, @floatFromInt(curr_irq)) * irq_diff_y };
+                                        const irq_end: c.ImVec2 = .{ .x = irq_start.x + irq_size.x, .y = irq_start.y + irq_size.y };
 
-                                        const text_start: c.ImVec2 = .{
-                                            .x = line_start.x + 20,
-                                            .y = line_start.y - 20,
+                                        const hovered = hovered_irq_node_index != null and hovered_irq_node_index.? == j;
+                                        const irq_fill: u32 = if (hovered) Colour.U32(0xdbb13f) else 0xffdddddd;
+                                        const line_fill_horizontal: u32 = if (hovered) Colour.U32(0xdbb13f) else 0xff000000;
+                                        const line_fill_vertical = blk: {
+                                            if (hovered_irq_node_index != null and hovered_irq_node_index.? >= j) {
+                                                break :blk Colour.U32(0xdbb13f);
+                                            } else {
+                                                break :blk 0xff000000;
+                                            }
                                         };
-                                        const irq_fmt = fmt(allocator, "{} {s}", .{ irq.number, irq.node.name });
-                                        defer allocator.free(irq_fmt);
-                                        c.ImDrawList_AddText_Vec2(draw_list, text_start, 0xff000000, irq_fmt, null);
 
-                                        curr_line += 1;
+                                        c.igPushStyleVar_Float(c.ImGuiStyleVar_FrameBorderSize, border_size);
+                                        c.igRenderFrame(irq_start, irq_end, irq_fill, true, 0);
+                                        c.igPopStyleVar(1);
+
+                                        if (c.igIsMouseHoveringRect(irq_start, irq_end, false)) {
+                                            state.highlighted_node = irq.node;
+                                            hovered_irq_node_index = j;
+                                            hovered_any = true;
+                                        }
+
+                                        const irq_fmt = fmt(allocator, "{} (0x{x}) - {s}", .{ irq.number, irq.number, irq.node.name });
+                                        defer allocator.free(irq_fmt);
+                                        c.ImDrawList_AddText_Vec2(draw_list, imgui.centerText(irq_fmt, irq_start, irq_size), 0xff000000, irq_fmt, null);
+
+                                        curr_irq += 1;
+
+                                        const line_width = 2;
+
+                                        c.ImDrawList_AddLine(
+                                            draw_list,
+                                            .{ .x = irq_start.x - 20, .y = irq_start.y - irq_diff_y / 2.0 },
+                                            .{ .x = irq_start.x - 20, .y = irq_start.y + irq_diff_y / 2.0 + line_width },
+                                            line_fill_vertical,
+                                            line_width,
+                                        );
+
+                                        c.ImDrawList_AddLine(
+                                            draw_list,
+                                            .{ .x = irq_start.x - 20 + line_width / 2.0, .y = irq_start.y + (irq_size.y / 2.0) },
+                                            .{ .x = irq_start.x - border_size, .y = irq_start.y + (irq_size.y / 2.0) },
+                                            line_fill_horizontal,
+                                            line_width,
+                                        );
                                     }
                                 }
 
-                                if (curr_line > 0) {
-                                    c.ImDrawList_AddLine(
-                                        draw_list,
-                                        .{ .x = line_x, .y = p1.y },
-                                        .{ .x = line_x, .y = line_y + line_spacing * @as(f32, @floatFromInt(curr_line - 1)) + 1 },
-                                        0xff000000,
-                                        2
-                                    );
-                                }
+                                // if (curr_irq > 0) {
+                                //     c.ImDrawList_AddLine(
+                                //         draw_list,
+                                //         .{ .x = irq_x, .y = p1.y },
+                                //         .{ .x = irq_x, .y = irq_y + irq_diff_y * ((@as(f32, @floatFromInt(curr_irq)) - 0.5)) + 1 },
+                                //         0xff000000,
+                                //         2
+                                //     );
+                                // }
+                            }
+
+                            if (!hovered_any) {
+                                hovered_irq_controller_index = null;
+                                hovered_irq_node_index = null;
                             }
 
                             c.ImDrawList_PopClipRect(draw_list);
@@ -1586,12 +1647,17 @@ pub fn main() !void {
                                     continue;
                                 }
 
-                                const box_size: c.ImVec2 = .{ .x = 150, .y = 50 };
+                                const text = fmt(allocator, "{s}", .{ reg.node.name });
+                                defer allocator.free(text);
+                                var text_size: c.ImVec2 = undefined;
+                                c.igCalcTextSize(&text_size, text, null, false, 0.0);
+
+                                const box_size: c.ImVec2 = .{ .x = @max(150, text_size.x + 20), .y = 50 };
                                 const box_start: c.ImVec2 = .{ .x = canvas_p0.x + 20, .y = canvas_p0.y + 20 + box_size.y * @as(f32, @floatFromInt(drawed_regs)) };
                                 const box_end: c.ImVec2 = .{ .x = box_start.x + box_size.x, .y = box_start.y + box_size.y };
                                 const fill: u32 = blk: {
-                                    if (hovered_rect_index != null and hovered_rect_index.? == i) {
-                                        break :blk 0xffdbb13f;
+                                    if (hovered_reg_box_index != null and hovered_reg_box_index.? == i) {
+                                        break :blk Colour.U32(0xdbb13f);
                                     } else if (drawed_regs % 2 == 0) {
                                         break :blk 0xffdddddd;
                                     } else {
@@ -1600,21 +1666,11 @@ pub fn main() !void {
                                 };
                                 c.ImDrawList_AddRectFilled(draw_list, box_start, box_end, fill, 0, 0);
 
-                                const text = fmt(allocator, "{s}", .{ reg.node.name });
-                                defer allocator.free(text);
-
-                                var text_size: c.ImVec2 = undefined;
-                                c.igCalcTextSize(&text_size, text, null, false, 0.0);
-
-                                const text_pos: c.ImVec2 = .{
-                                    .x = box_start.x + (box_size.x / 2.0) - (text_size.x / 2.0),
-                                    .y = box_start.y + (box_size.y / 2.0) - (text_size.y / 2.0)
-                                };
-                                c.ImDrawList_AddText_Vec2(draw_list, text_pos, 0xff000000, text, null);
+                                c.ImDrawList_AddText_Vec2(draw_list, imgui.centerText(text, box_start, box_size), 0xff000000, text, null);
 
                                 if (c.igIsMouseHoveringRect(box_start, box_end, false)) {
                                     state.highlighted_node = reg.node;
-                                    hovered_rect_index = i;
+                                    hovered_reg_box_index = i;
                                     hovered_any = true;
                                 }
 
@@ -1622,7 +1678,7 @@ pub fn main() !void {
                             }
 
                             if (!hovered_any) {
-                                hovered_rect_index = null;
+                                hovered_reg_box_index = null;
                             }
 
                             // c.ImDrawList_PopClipRect(draw_list);
@@ -1659,8 +1715,8 @@ pub fn main() !void {
                 const timestamp = std.time.timestamp();
                 for (state.persistent.recently_opened.items, 0..) |entry, i| {
                     c.igTableNextRow(0, 0);
-                    const colour = c.igGetColorU32_Vec4(Colour.toVec(0xF2A05C));
-                    c.igTableSetBgColor(c.ImGuiTableBgTarget_RowBg0 + 1, colour, -1);
+                    const colour: u24 = if (i % 2 != 0) 0xBCA275 else 0xA38B61;
+                    c.igTableSetBgColor(c.ImGuiTableBgTarget_RowBg0 + 1, Colour.U32(colour), -1);
                     _ = c.igTableSetColumnIndex(0);
                     const is_selected = selected_item != null and selected_item.? == i;
                     const flags = if (is_selected) c.ImGuiSelectableFlags_Highlight else c.ImGuiSelectableFlags_None;

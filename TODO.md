@@ -10,6 +10,8 @@
 
 ## Improvements and QoL
 
+* [ ] Linux CMA memory?
+* [ ] Search by phandle?
 * [ ] Memory regions list should definitely be represented as a table instead
 * [ ] When filtering an example DTB, selection is still clunky and does not work that well.
 * [ ] When filtering on the tree view, we should be looking at the expanded tree view
@@ -22,6 +24,8 @@
 * [ ] Need to handle recently opened files no longer existing on the file system
 * [ ] On macOS, Window loses focus after closing file picker, not sure why
 * [ ] Linux device tree bindings map/link for a compatible string
+    * [ ] Need to finish a proper script to do this. zig-yaml does not work for
+          some reason so maybe we need to stick with Python.
 * [ ] Goto parent node
 * [ ] Goto interrupt-parent node, etc
 * [ ] import Linux at runtime and have it search that directroy for the list?
