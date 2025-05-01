@@ -3,3 +3,4 @@ zig-out
 .DS_Store
 user.json
 imgui.ini
+.deb
