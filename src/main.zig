@@ -809,10 +809,10 @@ fn displaySelectedNode(allocator: Allocator) !void {
     c.igSetWindowSize_Vec2(state.windowSize(0.5, 0.5), 0);
     if (state.highlighted_node) |node| {
         if (c.igBeginTabBar("Views", c.ImGuiTabBarFlags_None)) {
-            var name_bytes = std.ArrayList(u8).init(allocator);
-            defer name_bytes.deinit();
-            const node_name = try dtb.nodeNameFullPath(&name_bytes, node);
             if (c.igBeginTabItem("Details", null, c.ImGuiTabItemFlags_None)) {
+                var name_bytes = std.ArrayList(u8).init(allocator);
+                defer name_bytes.deinit();
+                const node_name = try dtb.nodeNameFullPath(&name_bytes, node);
                 c.igText(node_name);
                 if (node.interruptParent()) |irq_parent| {
                     if (imgui.secondaryButton("Go to IRQ parent")) {
@@ -1573,13 +1573,16 @@ pub fn main() !void {
 
                                         const line_width = 2;
 
+                                        const vertical_start: c.ImVec2 = .{ .x = irq_start.x - 20, .y = irq_start.y - irq_diff_y / 2.0 - line_width / 2.0 };
+                                        const vertical_end: c.ImVec2 = .{ .x = irq_start.x - 20, .y = irq_start.y + irq_diff_y / 2.0 + line_width / 2.0 };
                                         c.ImDrawList_AddLine(
                                             draw_list,
-                                            .{ .x = irq_start.x - 20, .y = irq_start.y - irq_diff_y / 2.0 },
-                                            .{ .x = irq_start.x - 20, .y = irq_start.y + irq_diff_y / 2.0 + line_width },
+                                            vertical_start,
+                                            vertical_end,
                                             line_fill_vertical,
                                             line_width,
                                         );
+                                        std.log.info("{} vertical {d} {d} - {d} {d}", .{ curr_irq, vertical_start.x, vertical_start.y, vertical_end.x, vertical_end.y });
 
                                         c.ImDrawList_AddLine(
                                             draw_list,

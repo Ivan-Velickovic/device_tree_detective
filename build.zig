@@ -70,7 +70,9 @@ pub fn build(b: *std.Build) void {
             exe.linkSystemLibrary("Xrandr");
             exe.linkSystemLibrary("Xi");
             exe.linkSystemLibrary("dl");
-            exe.linkSystemLibrary("glfw");
+            exe.linkSystemLibrary2("glfw", .{
+                .preferred_link_mode = .static,
+            });
 
             exe.linkSystemLibrary("gtk+-3.0");
         },

@@ -10,6 +10,8 @@
 
 ## Improvements and QoL
 
+* [ ] display each parent of the full node name as a box that can be clicked on to
+      select that node?
 * [ ] Linux CMA memory?
 * [ ] Search by phandle?
 * [ ] Memory regions list should definitely be represented as a table instead
