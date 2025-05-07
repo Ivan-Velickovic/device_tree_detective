@@ -18,11 +18,6 @@ const zon: struct {
     const Dependency = struct { url: []const u8, hash: []const u8, lazy: bool = false };
 } = @import("build.zig.zon");
 
-const DebPackageTargets: []const std.Target.Query = &.{
-    .{ .cpu_arch = .x86_64, .os_tag = .linux, .abi = .gnu },
-    .{ .cpu_arch = .aarch64, .os_tag = .linux, .abi = .gnu },
-};
-
 const DebPackage = struct {
     const format =
     \\Package: DeviceTreeDetective
@@ -211,22 +206,20 @@ pub fn build(b: *std.Build) !void {
     // Packaging
     const package_step = b.step("package", "Build .deb packages");
     const wf = b.addWriteFiles();
-    inline for (DebPackageTargets) |t| {
-        const deb_arch = DebPackage.convertArch(t.cpu_arch.?);
-        const dir = b.fmt("device_tree_detective-{s}-1_{s}", .{ zon.version, deb_arch });
-        const package = try DebPackage.create(b, t.cpu_arch.?);
-        const file = wf.add(deb_arch, package);
-        package_step.dependOn(&b.addInstallFileWithDir(file, .{ .custom = "package" }, b.fmt("{s}/DEBIAN/control", .{ dir })).step);
+    const deb_arch = DebPackage.convertArch(target.result.cpu.arch);
+    const dir = b.fmt("device_tree_detective-{s}-1_{s}", .{ zon.version, deb_arch });
+    const package = try DebPackage.create(b, target.result.cpu.arch);
+    const file = wf.add(deb_arch, package);
+    package_step.dependOn(&b.addInstallFileWithDir(file, .{ .custom = "package" }, b.fmt("{s}/DEBIAN/control", .{ dir })).step);
 
-        const package_exe = makeExe(b, b.resolveTargetQuery(t), .ReleaseSafe, dtb_dep, cimgui_dep);
-        const target_output = b.addInstallArtifact(package_exe, .{
-            .dest_dir = .{
-                .override = .{
-                    .custom = b.fmt("{s}/usr/local/bin", .{ dir }),
-                },
+    const package_exe = makeExe(b, target, .ReleaseSafe, dtb_dep, cimgui_dep);
+    const target_output = b.addInstallArtifact(package_exe, .{
+        .dest_dir = .{
+            .override = .{
+                .custom = b.fmt("{s}/usr/local/bin", .{ dir }),
             },
-        });
+        },
+    });
 
-        package_step.dependOn(&target_output.step);
-    }
+    package_step.dependOn(&target_output.step);
 }
