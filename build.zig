@@ -52,6 +52,7 @@ const DebPackage = struct {
         return switch (arch) {
             .x86_64 => "amd64",
             .aarch64 => "arm64",
+            .riscv32, .riscv64 => @tagName(arch),
             else => @panic("Unknown architecture for DebPackage"),
         };
     }
