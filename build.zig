@@ -1,16 +1,59 @@
 const std = @import("std");
 
-pub fn build(b: *std.Build) void {
-    const target = b.standardTargetOptions(.{});
-    const optimize = b.standardOptimizeOption(.{});
+// In the current version fo Zig (0.14.0), we cannot import build.zig.zon without a
+// explicit result type. https://github.com/ziglang/zig/pull/22907 fixes this, but
+// until 0.15.0 of Zig is released, we must do this.
+const zon: struct {
+    name: enum { device_tree_detective },
+    version: []const u8,
+    fingerprint: u64,
+    minimum_zig_version: []const u8,
+    dependencies: struct {
+        cimgui: struct { path: []const u8 },
+        dtb: Dependency,
+        objc: Dependency,
+    },
+    paths: []const []const u8,
 
-    const dtbzig_dep = b.dependency("dtb", .{});
-    const dtb_mod = dtbzig_dep.module("dtb");
+    const Dependency = struct { url: []const u8, hash: []const u8, lazy: bool = false };
+} = @import("build.zig.zon");
 
-    const cimgui_dep = b.dependency("cimgui", .{
-        .target = target,
-        .optimize = optimize,
-    });
+const DebPackageTargets: []const std.Target.Query = &.{
+    .{ .cpu_arch = .x86_64, .os_tag = .linux, .abi = .gnu },
+    .{ .cpu_arch = .aarch64, .os_tag = .linux, .abi = .gnu },
+};
+
+const DebPackage = struct {
+    const format =
+    \\Package: DeviceTreeDetective
+    \\Version: {s}
+    \\Architecture: {s}
+    \\Maintainer: Ivan Velickovic <i.velickovic@unsw.edu.au>
+    \\Description: A program for inspecting Device Trees.
+    \\Depends: libglfw3
+    \\
+    ;
+
+    pub fn convertArch(arch: std.Target.Cpu.Arch) []const u8 {
+        return switch (arch) {
+            .x86_64 => "amd64",
+            .aarch64 => "arm64",
+            else => @panic("Unknown architecture for DebPackage"),
+        };
+    }
+
+    pub fn create(b: *std.Build, arch: std.Target.Cpu.Arch) ![]const u8 {
+        return try std.fmt.allocPrint(
+            b.allocator,
+            format,
+            .{ zon.version, convertArch(arch) },
+        );
+    }
+};
+
+fn makeExe(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, dtb_dep: *std.Build.Dependency, cimgui_dep: *std.Build.Dependency) *std.Build.Step.Compile {
+    const dtb_mod = dtb_dep.module("dtb");
+
     const exe_mod = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
         .target = target,
@@ -124,6 +167,22 @@ pub fn build(b: *std.Build) void {
     exe.addIncludePath(cimgui_dep.path(""));
     exe.addCSourceFile(.{ .file = cimgui_dep.path("cimgui.cpp"), .flags = cpp_flags });
 
+    return exe;
+}
+
+pub fn build(b: *std.Build) !void {
+    const target = b.standardTargetOptions(.{});
+    const optimize = b.standardOptimizeOption(.{});
+
+    const dtb_dep = b.dependency("dtb", .{});
+    const cimgui_dep = b.dependency("cimgui", .{
+        .target = target,
+        .optimize = optimize,
+    });
+
+    const dtb_mod = dtb_dep.module("dtb");
+
+    const exe = makeExe(b, target, optimize, dtb_dep, cimgui_dep);
     b.installArtifact(exe);
 
     const run_cmd = b.addRunArtifact(exe);
@@ -148,4 +207,26 @@ pub fn build(b: *std.Build) void {
     const run_tests = b.addRunArtifact(tests);
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_tests.step);
+
+    // Packaging
+    const package_step = b.step("package", "Build .deb packages");
+    const wf = b.addWriteFiles();
+    inline for (DebPackageTargets) |t| {
+        const deb_arch = DebPackage.convertArch(t.cpu_arch.?);
+        const dir = b.fmt("device_tree_detective-{s}-1_{s}", .{ zon.version, deb_arch });
+        const package = try DebPackage.create(b, t.cpu_arch.?);
+        const file = wf.add(deb_arch, package);
+        package_step.dependOn(&b.addInstallFileWithDir(file, .{ .custom = "package" }, b.fmt("{s}/DEBIAN/control", .{ dir })).step);
+
+        const package_exe = makeExe(b, b.resolveTargetQuery(t), .ReleaseSafe, dtb_dep, cimgui_dep);
+        const target_output = b.addInstallArtifact(package_exe, .{
+            .dest_dir = .{
+                .override = .{
+                    .custom = b.fmt("{s}/usr/local/bin", .{ dir }),
+                },
+            },
+        });
+
+        package_step.dependOn(&target_output.step);
+    }
 }
