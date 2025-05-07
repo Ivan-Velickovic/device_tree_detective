@@ -46,11 +46,12 @@ in
 
       zig build -Doptimize=ReleaseSafe --color off -p $out
 
+      # TODO: fix these icons
       mkdir -p $out/share/icons/hicolor/128x128@2/apps
       cp ${./assets/icons/macos.png} $out/share/icons/hicolor/128x128@2/apps/device_tree_detective.png
 
       mkdir -p $out/share/applications
-      cp ${./packaging/device-tree-detective.desktop} $out/share/applications
+      cp ${./packaging/device_tree_detective.desktop} $out/share/applications
 
       runHook postBuild
     '';
