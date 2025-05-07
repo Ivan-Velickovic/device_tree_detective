@@ -19,7 +19,7 @@ const zon: struct {
 } = @import("build.zig.zon");
 
 const DebPackage = struct {
-    const format =
+    const CONTROL_TEMPLATE =
     \\Package: DeviceTreeDetective
     \\Version: {s}
     \\Architecture: {s}
@@ -28,8 +28,27 @@ const DebPackage = struct {
     \\Depends: libglfw3
     \\
     ;
+    const DESKTOP_TEMPLATE =
+    \\[Desktop Entry]
+    \\Type=Application
+    \\Version={s}
+    \\StartupNotify=true
+    \\Name=Device Tree Detective
+    \\Exec=device_tree_detective
+    \\Icon=device_tree_detective
+    \\Terminal=false
+    \\Categories=Development
+    ;
 
-    pub fn convertArch(arch: std.Target.Cpu.Arch) []const u8 {
+    dir: []const u8,
+    arch: []const u8,
+    bin_dest: []const u8,
+    control_dest: []const u8,
+    control: []const u8,
+    desktop_dest: []const u8,
+    desktop: []const u8,
+
+    fn debArch(arch: std.Target.Cpu.Arch) []const u8 {
         return switch (arch) {
             .x86_64 => "amd64",
             .aarch64 => "arm64",
@@ -37,12 +56,19 @@ const DebPackage = struct {
         };
     }
 
-    pub fn create(b: *std.Build, arch: std.Target.Cpu.Arch) ![]const u8 {
-        return try std.fmt.allocPrint(
-            b.allocator,
-            format,
-            .{ zon.version, convertArch(arch) },
-        );
+    pub fn create(b: *std.Build, arch: std.Target.Cpu.Arch) DebPackage {
+        const deb_arch = debArch(arch);
+        const dir = b.fmt("device_tree_detective-{s}-1_{s}", .{ zon.version, deb_arch });
+
+        return .{
+            .dir = dir,
+            .bin_dest = b.fmt("{s}/usr/local/bin", .{ dir }),
+            .arch = deb_arch,
+            .control_dest = b.fmt("{s}/DEBIAN/control", .{ dir }),
+            .control = b.fmt(CONTROL_TEMPLATE, .{ zon.version, deb_arch }),
+            .desktop_dest = b.fmt("{s}/usr/local/share/applications", .{ dir }),
+            .desktop = b.fmt(DESKTOP_TEMPLATE, .{ zon.version }),
+        };
     }
 };
 
@@ -206,17 +232,17 @@ pub fn build(b: *std.Build) !void {
     // Packaging
     const package_step = b.step("package", "Build .deb packages");
     const wf = b.addWriteFiles();
-    const deb_arch = DebPackage.convertArch(target.result.cpu.arch);
-    const dir = b.fmt("device_tree_detective-{s}-1_{s}", .{ zon.version, deb_arch });
-    const package = try DebPackage.create(b, target.result.cpu.arch);
-    const file = wf.add(deb_arch, package);
-    package_step.dependOn(&b.addInstallFileWithDir(file, .{ .custom = "package" }, b.fmt("{s}/DEBIAN/control", .{ dir })).step);
+    const package = DebPackage.create(b, target.result.cpu.arch);
+    const control = wf.add("control", package.control);
+    const desktop = wf.add("desktop", package.desktop);
+    package_step.dependOn(&b.addInstallFileWithDir(control, .{ .custom = "package" }, package.control_dest).step);
+    package_step.dependOn(&b.addInstallFileWithDir(desktop, .{ .custom = "package" }, package.desktop_dest).step);
 
     const package_exe = makeExe(b, target, .ReleaseSafe, dtb_dep, cimgui_dep);
     const target_output = b.addInstallArtifact(package_exe, .{
         .dest_dir = .{
             .override = .{
-                .custom = b.fmt("{s}/usr/local/bin", .{ dir }),
+                .custom = package.bin_dest,
             },
         },
     });
