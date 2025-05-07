@@ -1,6 +1,0 @@
-Package: DeviceTreeDetective
-Version: 0.1.0
-Architecture: amd64
-Maintainer: Ivan Velickovic <i.velickovic@unsw.edu.au>
-Description: A program for inspecting Device Trees.
-Depends: libglfw3
