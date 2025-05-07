@@ -127,6 +127,29 @@ error: the following build command failed with exit code 1:
 /Users/ivanv/dev/dtb_viewer/.zig-cache/o/3aa2679eac9fdc05d9bbba627e0600d0/build /Users/ivanv/zigs/zig-macos-aarch64-0.15.0-dev.155+acfdad858/zig /Users/ivanv/zigs/zig-macos-aarch64-0.15.0-dev.155+acfdad858/lib /Users/ivanv/dev/dtb_viewer /Users/ivanv/dev/dtb_viewer/.zig-cache /Users/iv
 ```
 
+```
+device_tree_detective/packaging [main*] :: sudo apt remove devicetreedetective                       
+[sudo] password for ivanv:      
+Sorry, try again.
+[sudo] password for ivanv:                
+Reading package lists... Done
+Building dependency tree... Done
+Reading state information... Done
+The following packages were automatically installed and are no longer required:
+  liblldb-15 libllvm13 libwpe-1.0-1 libwpebackend-fdo-1.0-1 pantheon-agent-geoclue2
+Use 'sudo apt autoremove' to remove them.
+The following packages will be REMOVED:
+  devicetreedetective
+0 upgraded, 0 newly installed, 1 to remove and 350 not upgraded.
+After this operation, 0 B of additional disk space will be used.
+Do you want to continue? [Y/n] 
+(Reading database ... 238405 files and directories currently installed.)
+Removing devicetreedetective (0.1.0) ...
+dpkg: warning: while removing devicetreedetective, directory '/usr/local/share' not empty so not removed
+dpkg: warning: while removing devicetreedetective, directory '/usr/local/bin' not empty so not removed
+Processing triggers for hicolor-icon-theme (0.17-2) ...
+```
+
 ## Releasing
 
 1. Package macOS binary
