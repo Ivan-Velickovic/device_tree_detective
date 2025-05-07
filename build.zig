@@ -28,10 +28,10 @@ const DebPackage = struct {
     \\Depends: libglfw3
     \\
     ;
-    const DESKTOP_TEMPLATE =
+    const DESKTOP =
     \\[Desktop Entry]
     \\Type=Application
-    \\Version={s}
+    \\Version=1.0
     \\StartupNotify=true
     \\Name=Device Tree Detective
     \\Exec=device_tree_detective
@@ -67,7 +67,7 @@ const DebPackage = struct {
             .control_dest = b.fmt("{s}/DEBIAN/control", .{ dir }),
             .control = b.fmt(CONTROL_TEMPLATE, .{ zon.version, deb_arch }),
             .desktop_dest = b.fmt("{s}/usr/local/share/applications", .{ dir }),
-            .desktop = b.fmt(DESKTOP_TEMPLATE, .{ zon.version }),
+            .desktop = DESKTOP,
         };
     }
 };
@@ -237,6 +237,7 @@ pub fn build(b: *std.Build) !void {
     const desktop = wf.add("desktop", package.desktop);
     package_step.dependOn(&b.addInstallFileWithDir(control, .{ .custom = "package" }, package.control_dest).step);
     package_step.dependOn(&b.addInstallFileWithDir(desktop, .{ .custom = "package" }, package.desktop_dest).step);
+    package_step.dependOn(&b.addInstallFileWithDir(b.path("assets/icons/macos.png"), .{ .custom = "package" }, b.fmt("{s}/usr/share/icons/hicolor/128x128@2/apps/device_tree_detective.png", .{ package.dir })).step);
 
     const package_exe = makeExe(b, target, .ReleaseSafe, dtb_dep, cimgui_dep);
     const target_output = b.addInstallArtifact(package_exe, .{
