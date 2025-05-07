@@ -72,6 +72,7 @@ pub fn build(b: *std.Build) void {
             exe.linkSystemLibrary("dl");
             exe.linkSystemLibrary2("glfw", .{
                 .preferred_link_mode = .static,
+                .use_pkg_config = .force,
             });
 
             exe.linkSystemLibrary("gtk+-3.0");
