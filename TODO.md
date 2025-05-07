@@ -1,3 +1,10 @@
+## Plan
+
+* I really want to finish this by next Wednesday, which means I have one full week.
+* There's still lots of polish and features to implement.
+* I think until the end of this week I should finish the main features I want to ship.
+* Then spend 3 days working on packaging everything and polishing it.
+
 ## Main work
 
 * [ ] CPU info display
@@ -10,6 +17,7 @@
 
 ## Improvements and QoL
 
+* [ ] In IRQ canvas view, group IRQ lines by device
 * [ ] display each parent of the full node name as a box that can be clicked on to
       select that node?
 * [ ] Linux CMA memory?
