@@ -242,7 +242,7 @@ pub fn build(b: *std.Build) !void {
     const target_output = b.addInstallArtifact(package_exe, .{
         .dest_dir = .{
             .override = .{
-                .custom = package.bin_dest,
+                .custom = b.fmt("package/{s}", .{ package.bin_dest }),
             },
         },
     });
