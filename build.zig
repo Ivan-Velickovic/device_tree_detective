@@ -66,7 +66,7 @@ const DebPackage = struct {
             .arch = deb_arch,
             .control_dest = b.fmt("{s}/DEBIAN/control", .{ dir }),
             .control = b.fmt(CONTROL_TEMPLATE, .{ zon.version, deb_arch }),
-            .desktop_dest = b.fmt("{s}/usr/local/share/applications", .{ dir }),
+            .desktop_dest = b.fmt("{s}/usr/local/share/applications/device_tree_detective.desktop", .{ dir }),
             .desktop = DESKTOP,
         };
     }
