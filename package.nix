@@ -43,7 +43,15 @@ in
 
     buildPhase = ''
       runHook preBuild
-      zig build --color off -p $out
+
+      zig build -Doptimize=ReleaseSafe --color off -p $out
+
+      mkdir -p $out/share/icons/hicolor/128x128@2/apps
+      cp ${./assets/icons/macos.png} $out/share/icons/hicolor/128x128@2/apps/device_tree_detective.png
+
+      mkdir -p $out/share/applications
+      cp ${./packaging/device-tree-detective.desktop} $out/share/applications
+
       runHook postBuild
     '';
 
