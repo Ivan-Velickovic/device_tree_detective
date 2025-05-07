@@ -35,5 +35,6 @@
             pkg-config
           ] ++ osPkgs;
         };
+        packages.default = pkgs.callPackage ./package.nix {};
       });
 }

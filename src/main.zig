@@ -387,9 +387,9 @@ fn dropCallback(_: ?*c.GLFWwindow, count: c_int, paths: [*c][*c]const u8) callco
 /// time of writing is less than 200KiB.
 const DTB_DECOMPILE_MAX_OUTPUT = 1024 * 1024 * 16;
 
-fn glfwErrorCallback(_: c_int, _: [*c]const u8) callconv(.C) void {
+fn glfwErrorCallback(errn: c_int, str: [*c]const u8) callconv(.C) void {
     // TODO:
-    // log.err("GLFW Error '{}'': {s}", .{ errn, str });
+    log.err("GLFW Error '{}'': {s}", .{ errn, str });
 }
 
 /// Caller owns allocated formatted string
@@ -1125,6 +1125,7 @@ pub fn main() !void {
     // on small screens and half size on large screens?
     const window = c.glfwCreateWindow(1920, 1080, "Device Tree Detective", null, null);
     if (window == null) {
+        std.log.info("GLFW decided not to create a window", .{});
         return;
     }
     defer c.glfwDestroyWindow(window);
