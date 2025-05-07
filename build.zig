@@ -18,7 +18,7 @@ pub fn build(b: *std.Build) void {
     });
 
     const exe = b.addExecutable(.{
-        .name = "Device Tree Detective",
+        .name = "device_tree_detective",
         .root_module = exe_mod,
     });
     exe.addIncludePath(b.path("include"));
