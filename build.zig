@@ -10,6 +10,7 @@ const zon: struct {
     minimum_zig_version: []const u8,
     dependencies: struct {
         cimgui: struct { path: []const u8 },
+        glfw: struct { path: []const u8 },
         dtb: Dependency,
         objc: Dependency,
     },
@@ -19,13 +20,13 @@ const zon: struct {
 } = @import("build.zig.zon");
 
 const DebPackage = struct {
+    // TODO: handle libglfw3 being a dependency for system integration mode?
     const CONTROL_TEMPLATE =
     \\Package: DeviceTreeDetective
     \\Version: {s}
     \\Architecture: {s}
     \\Maintainer: Ivan Velickovic <i.velickovic@unsw.edu.au>
     \\Description: A program for inspecting Device Trees.
-    \\Depends: libglfw3
     \\
     ;
     const DESKTOP =
@@ -105,12 +106,22 @@ fn makeExe(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builti
 
     switch (target.result.os.tag) {
         .macos => {
-            exe.linkFramework("OpenGL");
-            exe.linkSystemLibrary2("glfw", .{
-                // Prefer static linking so we do not actually have to ship any 3rd
-                // party libraries for macOS.
-                .preferred_link_mode = .static,
-            });
+            // exe.linkFramework("OpenGL");
+            exe.linkFramework("Cocoa");
+            exe.linkFramework("IOKit");
+            exe.linkFramework("CoreFoundation");
+            exe.linkFramework("CoreVideo");
+            // exe.linkSystemLibrary2("glfw3", .{
+            //     // Force static linking so we do not actually have to ship any 3rd
+            //     // party libraries for macOS, error if we can't find it rather than
+            //     // doing some implicit fallback. You'll notice that we turn pkg-config
+            //     // integration off, this is because I had fucking weird issues with it
+            //     // when linking the static library even though it worked for the dynamic
+            //     // library.
+            //     .preferred_link_mode = .static,
+            //     .search_strategy = .no_fallback,
+            //     .use_pkg_config = .no,
+            // });
             const maybe_objc_dep = b.lazyDependency("objc", .{
                 .target = target,
                 .optimize = optimize,
@@ -120,10 +131,10 @@ fn makeExe(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builti
             }
         },
         .windows => {
-            exe.addLibraryPath(.{ .cwd_relative = "glfw-3.4.bin.WIN64/glfw-3.4.bin.WIN64/lib-mingw-w64" });
-            exe.addIncludePath(.{ .cwd_relative = "glfw-3.4.bin.WIN64/glfw-3.4.bin.WIN64/include" });
+            // exe.addLibraryPath(.{ .cwd_relative = "glfw-3.4.bin.WIN64/glfw-3.4.bin.WIN64/lib-mingw-w64" });
+            // exe.addIncludePath(.{ .cwd_relative = "glfw-3.4.bin.WIN64/glfw-3.4.bin.WIN64/include" });
             exe.linkSystemLibrary("opengl32");
-            exe.linkSystemLibrary2("glfw3", .{ .preferred_link_mode = .static });
+            // exe.linkSystemLibrary2("glfw3", .{ .preferred_link_mode = .static });
             exe.linkSystemLibrary("gdi32");
             exe.linkSystemLibrary("imm32");
             exe.linkSystemLibrary("Ole32");
@@ -135,14 +146,22 @@ fn makeExe(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builti
             exe.linkSystemLibrary("Xrandr");
             exe.linkSystemLibrary("Xi");
             exe.linkSystemLibrary("dl");
-            exe.linkSystemLibrary2("glfw", .{
-                .preferred_link_mode = .static,
-            });
+            // exe.linkSystemLibrary2("glfw3", .{
+            //     .preferred_link_mode = .static,
+            // });
 
             exe.linkSystemLibrary("gtk+-3.0");
         },
         else => @panic("unknown OS target"),
     }
+
+    const glfw = b.dependency("glfw", .{
+        .target = target,
+        .optimize = optimize,
+        .opengl = true,
+        .metal = false,
+    });
+    exe.linkLibrary(glfw.artifact("glfw"));
 
     exe.linkLibC();
     exe.linkLibCpp();
@@ -196,7 +215,10 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const dtb_dep = b.dependency("dtb", .{});
+    const dtb_dep = b.dependency("dtb", .{
+        .target = target,
+        .optimize = optimize,
+    });
     const cimgui_dep = b.dependency("cimgui", .{
         .target = target,
         .optimize = optimize,

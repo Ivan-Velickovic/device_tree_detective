@@ -7,15 +7,15 @@ const Allocator = std.mem.Allocator;
 const DTC_DTB_MAX_OUTPUT = 1024 * 1024 * 16;
 const DTC_DTS_MAX_OUTPUT = 1024 * 1024 * 16;
 
-pub fn canInvoke(allocator: Allocator) !bool {
+pub fn available(allocator: Allocator) bool {
     var dtc = std.process.Child.init(&.{ "dtc", "--version" }, allocator);
 
     dtc.stdin_behavior = .Ignore;
     dtc.stdout_behavior = .Pipe;
     dtc.stderr_behavior = .Pipe;
 
-    try dtc.spawn();
-    const term = try dtc.wait();
+    dtc.spawn() catch return false;
+    const term = dtc.wait() catch return false;
 
     switch (term) {
         .Exited => |code| switch (code) {
@@ -28,7 +28,7 @@ pub fn canInvoke(allocator: Allocator) !bool {
 
 /// Invoke the Device Tree Compiler to convert the given DTS to DTB.
 // pub fn fromSource(allocator: Allocator, input: []const u8) !void {
-//     if (!try canInvoke(allocator)) {
+//     if (!canInvoke(allocator)) {
 //         return null;
 //     }
 
@@ -58,7 +58,7 @@ pub fn canInvoke(allocator: Allocator) !bool {
 
 /// Invoke the Device Tree Compiler to convert the given DTB to DTS.
 pub fn fromBlob(allocator: Allocator, input: []const u8) !?std.ArrayListUnmanaged(u8) {
-    if (!try canInvoke(allocator)) {
+    if (!available(allocator)) {
         return null;
     }
 

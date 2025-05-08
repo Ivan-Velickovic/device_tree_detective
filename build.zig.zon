@@ -11,6 +11,9 @@
             .url = "https://github.com/Ivan-Velickovic/dtb.zig/archive/4101efa09f2863a27367aae449f9186c700cb132.tar.gz",
             .hash = "dtb-0.0.0-gULdmRIcAgAuGyjPnpHqY6Gu8RDkKeJe2qoNFZG0MwcO"
         },
+        .glfw = .{
+            .path = "glfw",
+        },
         .objc = .{
             .url = "https://github.com/mitchellh/zig-objc/archive/3ab0d37c7d6b933d6ded1b3a35b6b60f05590a98.tar.gz",
             .hash = "zig_objc-0.0.0-Ir_Sp3TyAADEVRTxXlScq3t_uKAM91MYNerZkHfbD0yt",

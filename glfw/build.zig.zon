@@ -1,0 +1,11 @@
+.{
+    .name = .glfw,
+    .version = "3.4.0",
+    .paths = .{""},
+    .dependencies = .{
+        .glfw = .{
+            .url = "https://github.com/glfw/glfw/archive/refs/tags/3.4.tar.gz",
+            .hash = "N-V-__8AAL40TADEbrysYHBl-UIZO4KiG4chP8pLDVDINGH4",
+        },
+    },
+}

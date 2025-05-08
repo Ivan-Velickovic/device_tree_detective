@@ -42,6 +42,7 @@ const zon: struct {
     minimum_zig_version: []const u8,
     dependencies: struct {
         cimgui: struct { path: []const u8 },
+        glfw: struct { path: []const u8 },
         dtb: Dependency,
         objc: Dependency,
     },
@@ -99,6 +100,7 @@ const State = struct {
     compatible_uboot_drivers: CompatibleMap,
     /// YAML bindings (from linux/Documentation/devicetree/bindings)
     compatible_linux_bindings: CompatibleMap,
+    dtc_available: bool,
 
     pub fn init(allocator: Allocator) !State {
         return .{
@@ -109,6 +111,7 @@ const State = struct {
             .compatible_linux_drivers = try CompatibleMap.create(allocator, linux_driver_compatible_txt),
             .compatible_uboot_drivers = try CompatibleMap.create(allocator, uboot_driver_compatible_txt),
             .compatible_linux_bindings = try CompatibleMap.create(allocator, linux_dt_binding_compatible_txt),
+            .dtc_available = dtc.available(allocator),
         };
     }
 
@@ -809,6 +812,21 @@ fn displaySelectedNode(allocator: Allocator) !void {
                 const platform = state.getPlatform().?;
                 if (platform.dts) |dts| {
                     c.igText(@ptrCast(dts.items));
+                } else if (!state.dtc_available) {
+                    // TODO: this is a big mess - there's too much state to keep track of and weird edge
+                    // cases. It would be way easier if we just always had dtc available by shipping it ourselves!
+                    c.igText("The Device Tree Compiler (dtc) is required to be installed for the source view but could not be found.");
+                    const try_again = c.igButton("Try again", .{});
+                    if (try_again) {
+                        state.dtc_available = dtc.available(allocator);
+                        platform.dts = dtc.fromBlob(allocator, platform.path) catch |e| blk: {
+                            log.err("dtc should have been available but we failed to decompile blob: {any}", .{ e });
+                            break :blk null;
+                        };
+                        if (platform.dts) |*dts| {
+                            try dts.appendSlice(allocator, "\x00");
+                        }
+                    }
                 }
                 c.igEndTabItem();
             }
@@ -957,10 +975,6 @@ fn glfwWindowSizeCallback(_: ?*c.GLFWwindow, width: c_int, height: c_int) callco
 }
 
 pub fn main() !void {
-    log.info("starting Device Tree Detective version {s} on {s}", .{ zon.version, @tagName(builtin.os.tag) });
-    log.info("compiled with Zig {s}", .{ builtin.zig_version_string });
-    log.info("GLFW version {s}", .{ c.glfwGetVersionString() });
-
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
     defer {
@@ -971,6 +985,10 @@ pub fn main() !void {
     defer std.process.argsFree(allocator, process_args);
     const args = try Args.parse(allocator, process_args);
     defer args.deinit();
+
+    log.info("starting Device Tree Detective version {s} on {s}", .{ zon.version, @tagName(builtin.os.tag) });
+    log.info("compiled with Zig {s}", .{ builtin.zig_version_string });
+    log.info("GLFW version {s}", .{ c.glfwGetVersionString() });
 
     if (builtin.os.tag == .linux) {
         log.info("GTK version build={d}.{d}.{d} runtime={d}.{d}.{d}", .{
@@ -985,6 +1003,8 @@ pub fn main() !void {
 
     state = try State.init(allocator);
     defer state.deinit();
+
+    log.info("dtc available: {}", .{ state.dtc_available });
 
     // Do not need to deinit since it will be done when we deinit the whole
     // list of platforms.
@@ -1210,6 +1230,9 @@ pub fn main() !void {
             if (c.igBeginMenu("File", true)) {
                 if (c.igMenuItem_Bool("Open", SUPER_KEY_STR ++ " + O", false, true)) {
                     open = true;
+                }
+                if (c.igMenuItem_Bool("Open Recent", "", false, true)) {
+                    c.igText("TODO");
                 }
                 if (c.igMenuItem_Bool("Close", SUPER_KEY_STR ++ " + W", false, true)) {
                     close = true;
