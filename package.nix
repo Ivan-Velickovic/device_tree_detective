@@ -4,6 +4,7 @@
 #
 {
   zig
+, libxkbcommon
 , pkg-config
 , glfw
 , gtk3
@@ -58,7 +59,7 @@ in
       cp ${./assets/icons/macos.png} $out/share/icons/hicolor/128x128@2/apps/device_tree_detective.png
 
       mkdir -p $out/share/applications
-      cp ${./packaging/device_tree_detective.desktop} $out/share/applications
+      cp ${./packaging/device-tree-detective.desktop} $out/share/applications
 
       runHook postBuild
     '';
@@ -69,6 +70,6 @@ in
       ln -s ${deps} $ZIG_GLOBAL_CACHE_DIR/p
     '';
 
-    buildInputs = [ glfw gtk3 glibc pkg-config ];
-    nativeBuildInputs = [ zig ];
+    buildInputs = [ libxkbcommon glfw gtk3 glibc ];
+    nativeBuildInputs = [ zig pkg-config ];
   }

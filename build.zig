@@ -29,17 +29,6 @@ const DebPackage = struct {
     \\Description: A program for inspecting Device Trees.
     \\
     ;
-    const DESKTOP =
-    \\[Desktop Entry]
-    \\Type=Application
-    \\Version=1.0
-    \\StartupNotify=true
-    \\Name=Device Tree Detective
-    \\Exec=device_tree_detective
-    \\Icon=device_tree_detective
-    \\Terminal=false
-    \\Categories=Development
-    ;
 
     dir: []const u8,
     arch: []const u8,
@@ -47,7 +36,7 @@ const DebPackage = struct {
     control_dest: []const u8,
     control: []const u8,
     desktop_dest: []const u8,
-    desktop: []const u8,
+    desktop: std.Build.LazyPath,
 
     fn debArch(arch: std.Target.Cpu.Arch) []const u8 {
         return switch (arch) {
@@ -64,17 +53,17 @@ const DebPackage = struct {
 
         return .{
             .dir = dir,
-            .bin_dest = b.fmt("{s}/usr/local/bin", .{ dir }),
+            .bin_dest = b.fmt("{s}/usr/local/bin/device_tree_detective", .{ dir }),
             .arch = deb_arch,
             .control_dest = b.fmt("{s}/DEBIAN/control", .{ dir }),
             .control = b.fmt(CONTROL_TEMPLATE, .{ zon.version, deb_arch }),
             .desktop_dest = b.fmt("{s}/usr/local/share/applications/device_tree_detective.desktop", .{ dir }),
-            .desktop = DESKTOP,
+            .desktop = b.path("packaging/device-tree-detective.desktop"),
         };
     }
 };
 
-fn makeExe(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, dtb_dep: *std.Build.Dependency, cimgui_dep: *std.Build.Dependency) *std.Build.Step.Compile {
+fn buildExe(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, dtb_dep: *std.Build.Dependency, cimgui_dep: *std.Build.Dependency) *std.Build.Step.Compile {
     const dtb_mod = dtb_dep.module("dtb");
 
     const exe_mod = b.createModule(.{
@@ -227,7 +216,7 @@ pub fn build(b: *std.Build) !void {
 
     const dtb_mod = dtb_dep.module("dtb");
 
-    const exe = makeExe(b, target, optimize, dtb_dep, cimgui_dep);
+    const exe = buildExe(b, target, optimize, dtb_dep, cimgui_dep);
     b.installArtifact(exe);
 
     const run_cmd = b.addRunArtifact(exe);
@@ -254,36 +243,36 @@ pub fn build(b: *std.Build) !void {
     test_step.dependOn(&run_tests.step);
 
     // Packaging
-    const package_step = b.step("package", "Build .deb packages");
+    const deb_step = b.step("deb", "Build .deb packages");
+    const deb_install_dir: std.Build.InstallDir = .{ .custom = "deb" };
     const wf = b.addWriteFiles();
     const package = DebPackage.create(b, target.result.cpu.arch);
     _ = wf.add(package.control_dest, package.control);
-    _ = wf.add(package.desktop_dest, package.desktop);
+    _ = wf.addCopyFile(package.desktop, package.desktop_dest);
     _ = wf.addCopyFile(b.path("assets/icons/macos.png"), b.fmt("{s}/usr/share/icons/hicolor/128x128@2/apps/device_tree_detective.png", .{ package.dir }));
 
-    const package_create = b.step("package-create", "Generate debian package directory");
-    package_create.dependOn(&wf.step);
-    package_create.dependOn(&b.addInstallDirectory(.{ .source_dir = wf.getDirectory(), .install_dir = .{ .custom = "package" }, .install_subdir = "" }).step);
+    const deb_create = b.step("deb-create", "Generate debian package directory");
+    deb_create.dependOn(&wf.step);
+    deb_create.dependOn(&b.addInstallDirectory(.{ .source_dir = wf.getDirectory(), .install_dir = deb_install_dir, .install_subdir = "" }).step);
 
-    const package_exe = makeExe(b, target, .ReleaseSafe, dtb_dep, cimgui_dep);
+    const package_exe = buildExe(b, target, .ReleaseSafe, dtb_dep, cimgui_dep);
     const target_output = b.addInstallArtifact(package_exe, .{
         .dest_dir = .{
-            .override = .{
-                .custom = b.fmt("package/{s}", .{ package.bin_dest }),
-            },
+            .override = deb_install_dir,
         },
+        .dest_sub_path = package.bin_dest,
     });
 
-    package_create.dependOn(&target_output.step);
+    deb_create.dependOn(&target_output.step);
 
-    const make_deb = b.addSystemCommand(&.{
+    const dpkg_cmd = b.addSystemCommand(&.{
         "dpkg-deb", "--build", "--root-owner-group"
     });
-    make_deb.addDirectoryArg(.{ .cwd_relative = b.getInstallPath(.{ .custom = "package" }, package.dir) });
+    dpkg_cmd.addDirectoryArg(.{ .cwd_relative = b.getInstallPath(deb_install_dir, package.dir) });
     const deb_name = b.fmt("{s}.deb", .{ package.dir });
-    const deb = make_deb.addOutputFileArg(deb_name);
-    make_deb.step.dependOn(package_create);
+    const deb = dpkg_cmd.addOutputFileArg(deb_name);
+    dpkg_cmd.step.dependOn(deb_create);
 
-    package_step.dependOn(&make_deb.step);
-    package_step.dependOn(&b.addInstallFileWithDir(deb, .{ .custom = "package" }, deb_name).step);
+    deb_step.dependOn(&dpkg_cmd.step);
+    deb_step.dependOn(&b.addInstallFileWithDir(deb, deb_install_dir, deb_name).step);
 }
