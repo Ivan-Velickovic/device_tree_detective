@@ -1066,7 +1066,12 @@ pub fn main() !void {
         else => @compileError("unknown GLSL version for OS"),
     };
     c.glfwWindowHint(c.GLFW_CONTEXT_VERSION_MAJOR, 3);
-    c.glfwWindowHint(c.GLFW_CONTEXT_VERSION_MINOR, 3);
+    const opengl_minor_version = switch (builtin.os.tag) {
+        .macos => 3,
+        .linux => 1,
+        else => @compileError("unknown OpenGL minor version for OS"),
+    };
+    c.glfwWindowHint(c.GLFW_CONTEXT_VERSION_MINOR, opengl_minor_version);
 
     if (builtin.os.tag == .macos) {
         c.glfwWindowHint(c.GLFW_OPENGL_FORWARD_COMPAT, c.GL_TRUE);
@@ -1076,7 +1081,7 @@ pub fn main() !void {
     // on small screens and half size on large screens?
     const window = c.glfwCreateWindow(1920, 1080, "Device Tree Detective", null, null);
     if (window == null) {
-        std.log.info("GLFW decided not to create a window", .{});
+        std.log.err("GLFW decided not to create a window", .{});
         return;
     }
     defer c.glfwDestroyWindow(window);
