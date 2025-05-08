@@ -30,6 +30,13 @@
         hash = "sha256-3QP5Platj77D0zZdYbMkAIG/WJhBnLZMwrzM65pGJ9Q=";
       };
     }
+    {
+      name = "N-V-__8AAL40TADEbrysYHBl-UIZO4KiG4chP8pLDVDINGH4";
+      path = fetchzip {
+        url = "https://github.com/glfw/glfw/archive/refs/tags/3.4.tar.gz";
+        hash = "sha256-FcnQPDeNHgov1Z07gjFze0VMz2diOrpbKZCsI96ngz0=";
+      };
+    }
   ];
 in
   stdenv.mkDerivation rec {
