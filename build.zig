@@ -250,4 +250,13 @@ pub fn build(b: *std.Build) !void {
     });
 
     package_step.dependOn(&target_output.step);
+
+    const make_deb = b.addSystemCommand(&.{
+        "dpkg-deb", "--build", "--root-owner-group"
+    });
+    make_deb.addDirectoryArg(wf.getDirectory());
+    const deb_name = b.fmt("{s}.deb", .{ package.dir });
+    const deb = make_deb.addOutputDirectoryArg(deb_name);
+
+    package_step.dependOn(&b.addInstallFileWithDir(deb, .{ .custom = "package" }, deb_name).step);
 }
