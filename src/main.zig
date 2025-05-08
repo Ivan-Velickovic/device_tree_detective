@@ -1,6 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const dtb = @import("dtb.zig");
+const dtc = @import("dtc.zig");
 const Allocator = std.mem.Allocator;
 const ArrayList = std.ArrayList;
 const log = std.log;
@@ -383,10 +384,6 @@ fn dropCallback(_: ?*c.GLFWwindow, count: c_int, paths: [*c][*c]const u8) callco
     state.setPlatform(std.mem.span(paths[@as(usize, @intCast(count)) - 1]));
 }
 
-/// 16MiB. Should be plenty given the biggest DTS in Linux at the
-/// time of writing is less than 200KiB.
-const DTB_DECOMPILE_MAX_OUTPUT = 1024 * 1024 * 16;
-
 fn glfwErrorCallback(errn: c_int, str: [*c]const u8) callconv(.C) void {
     // TODO:
     log.err("GLFW Error '{}'': {s}", .{ errn, str });
@@ -407,65 +404,13 @@ fn humanSize(allocator: Allocator, n: u64) [:0]const u8 {
     }
 }
 
-fn compileDtb(allocator: Allocator, input: []const u8) !void {
-    var dtc = std.process.Child.init(&.{ "dtc", "-I", "dts", "-O", "dtb", input }, allocator);
-
-    dtc.stdin_behavior = .Ignore;
-    dtc.stdout_behavior = .Pipe;
-    dtc.stderr_behavior = .Pipe;
-
-    var stdout = std.ArrayListUnmanaged(u8){};
-    defer stdout.deinit(allocator);
-    var stderr = std.ArrayListUnmanaged(u8){};
-    defer stderr.deinit(allocator);
-
-    try dtc.spawn();
-    try dtc.collectOutput(allocator, &stdout, &stderr, 1024 * 1024);
-    const term = try dtc.wait();
-
-    switch (term) {
-        .Exited => |code| switch (code) {
-            0 => std.debug.print("{}", .{ stdout }),
-            else => @panic("TODO"),
-        },
-        else => @panic("TODO"),
-    }
-}
-
-fn decompileDtb(allocator: Allocator, input: []const u8) !std.ArrayListUnmanaged(u8) {
-    var dtc = std.process.Child.init(&.{ "dtc", "-I", "dtb", "-O", "dts", input }, allocator);
-
-    dtc.stdin_behavior = .Ignore;
-    dtc.stdout_behavior = .Pipe;
-    dtc.stderr_behavior = .Pipe;
-
-    var stdout = std.ArrayListUnmanaged(u8){};
-    var stderr = std.ArrayListUnmanaged(u8){};
-    defer stderr.deinit(allocator);
-
-    try dtc.spawn();
-    try dtc.collectOutput(allocator, &stdout, &stderr, DTB_DECOMPILE_MAX_OUTPUT);
-    const term = try dtc.wait();
-
-    switch (term) {
-        .Exited => |code| switch (code) {
-            0 => {},
-            else => @panic("TODO"),
-        },
-        else => @panic("TODO"),
-    }
-
-    return stdout;
-}
-
 const LINUX_GITHUB = "https://github.com/torvalds/linux/tree/master";
 const UBOOT_GITHUB = "https://github.com/u-boot/u-boot/tree/master";
 
 const Platform = struct {
     allocator: Allocator,
     dtb_bytes: []const u8,
-    dts: std.ArrayListUnmanaged(u8),
-    dts_bytes: [:0]const u8,
+    dts: ?std.ArrayListUnmanaged(u8),
     path: [:0]const u8,
     root: *dtb.Node,
     model: ?[]const u8,
@@ -552,14 +497,15 @@ const Platform = struct {
         var irq_controllers = std.ArrayList(*dtb.Node).init(allocator);
         try irqControllers(root, &irq_controllers);
 
-        var dts = decompileDtb(allocator, path) catch @panic("TODO");
-        try dts.appendSlice(allocator, "\x00");
+        var maybe_dts = dtc.fromBlob(allocator, path) catch @panic("TODO");
+        if (maybe_dts) |*dts| {
+            try dts.appendSlice(allocator, "\x00");
+        }
 
         return .{
             .allocator = allocator,
             .dtb_bytes = dtb_bytes,
-            .dts = dts,
-            .dts_bytes = @ptrCast(dts.items),
+            .dts = maybe_dts,
             .path = try allocator.dupeZ(u8, path),
             .root = root,
             .model = root.prop(.Model),
@@ -586,7 +532,9 @@ const Platform = struct {
             allocator.free(platform.model_str);
         }
         allocator.free(platform.dtb_bytes);
-        platform.dts.deinit(platform.allocator);
+        if (platform.dts) |*dts| {
+            dts.deinit(platform.allocator);
+        }
     }
 };
 
@@ -858,7 +806,10 @@ fn displaySelectedNode(allocator: Allocator) !void {
                 c.igEndTabItem();
             }
             if (c.igBeginTabItem("Source", null, c.ImGuiTabItemFlags_None)) {
-                c.igText(state.getPlatform().?.dts_bytes);
+                const platform = state.getPlatform().?;
+                if (platform.dts) |dts| {
+                    c.igText(@ptrCast(dts.items));
+                }
                 c.igEndTabItem();
             }
         }
