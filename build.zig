@@ -160,6 +160,7 @@ fn makeExe(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builti
         .optimize = optimize,
         .opengl = true,
         .metal = false,
+        .wayland = false,
     });
     exe.linkLibrary(glfw.artifact("glfw"));
 
