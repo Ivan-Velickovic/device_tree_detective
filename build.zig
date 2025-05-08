@@ -234,11 +234,13 @@ pub fn build(b: *std.Build) !void {
     const package_step = b.step("package", "Build .deb packages");
     const wf = b.addWriteFiles();
     const package = DebPackage.create(b, target.result.cpu.arch);
-    const control = wf.add("control", package.control);
-    const desktop = wf.add("desktop", package.desktop);
-    package_step.dependOn(&b.addInstallFileWithDir(control, .{ .custom = "package" }, package.control_dest).step);
-    package_step.dependOn(&b.addInstallFileWithDir(desktop, .{ .custom = "package" }, package.desktop_dest).step);
-    package_step.dependOn(&b.addInstallFileWithDir(b.path("assets/icons/macos.png"), .{ .custom = "package" }, b.fmt("{s}/usr/share/icons/hicolor/128x128@2/apps/device_tree_detective.png", .{ package.dir })).step);
+    _ = wf.add(package.control_dest, package.control);
+    _ = wf.add(package.desktop_dest, package.desktop);
+    _ = wf.addCopyFile(b.path("assets/icons/macos.png"), b.fmt("{s}/usr/share/icons/hicolor/128x128@2/apps/device_tree_detective.png", .{ package.dir }));
+
+    const package_create = b.step("package-create", "Generate debian package directory");
+    package_create.dependOn(&wf.step);
+    package_create.dependOn(&b.addInstallDirectory(.{ .source_dir = wf.getDirectory(), .install_dir = .{ .custom = "package" }, .install_subdir = "" }).step);
 
     const package_exe = makeExe(b, target, .ReleaseSafe, dtb_dep, cimgui_dep);
     const target_output = b.addInstallArtifact(package_exe, .{
@@ -249,15 +251,16 @@ pub fn build(b: *std.Build) !void {
         },
     });
 
-    package_step.dependOn(&target_output.step);
+    package_create.dependOn(&target_output.step);
 
     const make_deb = b.addSystemCommand(&.{
         "dpkg-deb", "--build", "--root-owner-group"
     });
-    make_deb.addDirectoryArg(wf.getDirectory());
+    make_deb.addDirectoryArg(.{ .cwd_relative = b.getInstallPath(.{ .custom = "package" }, package.dir) });
     const deb_name = b.fmt("{s}.deb", .{ package.dir });
-    const deb = make_deb.addOutputDirectoryArg(deb_name);
-    make_deb.dependOn(package_step);
+    const deb = make_deb.addOutputFileArg(deb_name);
+    make_deb.step.dependOn(package_create);
 
+    package_step.dependOn(&make_deb.step);
     package_step.dependOn(&b.addInstallFileWithDir(deb, .{ .custom = "package" }, deb_name).step);
 }
