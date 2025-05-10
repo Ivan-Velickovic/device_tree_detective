@@ -32,7 +32,7 @@ const uboot_driver_compatible_txt = @embedFile("assets/maps/uboot_compatible_lis
 const font: [:0]const u8 = @embedFile("assets/fonts/inter/Inter-Medium.ttf");
 const logo: [:0]const u8 = @embedFile("assets/icons/macos.png");
 
-// In the current version fo Zig (0.14.0), we cannot import build.zig.zon without a
+// In the current version of Zig (0.14.0), we cannot import build.zig.zon without a
 // explicit result type. https://github.com/ziglang/zig/pull/22907 fixes this, but
 // until 0.15.0 of Zig is released, we must do this.
 const zon: struct {

@@ -1,6 +1,6 @@
 const std = @import("std");
 
-// In the current version fo Zig (0.14.0), we cannot import build.zig.zon without a
+// In the current version of Zig (0.14.0), we cannot import build.zig.zon without a
 // explicit result type. https://github.com/ziglang/zig/pull/22907 fixes this, but
 // until 0.15.0 of Zig is released, we must do this.
 const zon: struct {
