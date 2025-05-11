@@ -198,6 +198,10 @@ fn buildExe(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.built
     exe.addIncludePath(cimgui_dep.path(""));
     exe.addCSourceFile(.{ .file = cimgui_dep.path("cimgui.cpp"), .flags = cpp_flags });
 
+    const options = b.addOptions();
+    options.addOption([]const u8, "version", zon.version);
+    exe.root_module.addOptions("config", options);
+
     return exe;
 }
 

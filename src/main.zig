@@ -1,5 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
+// build.zig configuration options
+const config = @import("config");
 const dtb = @import("dtb.zig");
 const dtc = @import("dtc.zig");
 const Allocator = std.mem.Allocator;
@@ -21,7 +23,7 @@ comptime {
 const c = @import("c.zig").c;
 const objc = if (builtin.os.tag == .macos) @import("objc") else null;
 
-const ABOUT = std.fmt.comptimePrint("Device Tree Detective v{s}", .{ zon.version });
+const ABOUT = std.fmt.comptimePrint("Device Tree Detective v{s}", .{ config.version });
 
 const SUPER_KEY_STR = if (builtin.os.tag == .macos) "CMD" else "CTRL";
 
@@ -31,25 +33,6 @@ const linux_dt_binding_compatible_txt = @embedFile("assets/maps/dt_bindings_list
 const uboot_driver_compatible_txt = @embedFile("assets/maps/uboot_compatible_list.txt");
 const font: [:0]const u8 = @embedFile("assets/fonts/inter/Inter-Medium.ttf");
 const logo: [:0]const u8 = @embedFile("assets/icons/macos.png");
-
-// In the current version of Zig (0.14.0), we cannot import build.zig.zon without a
-// explicit result type. https://github.com/ziglang/zig/pull/22907 fixes this, but
-// until 0.15.0 of Zig is released, we must do this.
-const zon: struct {
-    name: enum { device_tree_detective },
-    version: []const u8,
-    fingerprint: u64,
-    minimum_zig_version: []const u8,
-    dependencies: struct {
-        cimgui: struct { path: []const u8 },
-        glfw: struct { path: []const u8 },
-        dtb: Dependency,
-        objc: Dependency,
-    },
-    paths: []const []const u8,
-
-    const Dependency = struct { url: []const u8, hash: []const u8, lazy: bool = false };
-} = @import("build.zig.zon");
 
 fn humanTimestampDiff(allocator: Allocator, t0: i64, t1: i64) [:0]const u8 {
     const diff_s = t1 - t0;
@@ -986,7 +969,7 @@ pub fn main() !void {
     const args = try Args.parse(allocator, process_args);
     defer args.deinit();
 
-    log.info("starting Device Tree Detective version {s} on {s}", .{ zon.version, @tagName(builtin.os.tag) });
+    log.info("starting Device Tree Detective version {s} on {s}", .{ config.version, @tagName(builtin.os.tag) });
     log.info("compiled with Zig {s}", .{ builtin.zig_version_string });
     log.info("GLFW version {s}", .{ c.glfwGetVersionString() });
 

@@ -35,8 +35,7 @@ mv imgui-4806a1924ff6181180bf5e4b8b79ab4394118875 imgui
 ## Packaging .deb
 
 ```sh
-zig build -Doptimize=ReleaseSafe -p packaging/device_tree_detective-0.1.0-1_amd64/usr/local
-dpkg-deb --build --root-owner-group packaging/device_tree_detective-0.1.0-1_amd64
+zig build deb
 ```
 
 ## Nix
