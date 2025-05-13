@@ -6,7 +6,6 @@
   zig
 , libxkbcommon
 , pkg-config
-, glfw
 , gtk3
 , glibc
 , stdenv
@@ -70,6 +69,6 @@ in
       ln -s ${deps} $ZIG_GLOBAL_CACHE_DIR/p
     '';
 
-    buildInputs = [ libxkbcommon glfw gtk3 glibc ];
+    buildInputs = [ libxkbcommon gtk3 glibc ];
     nativeBuildInputs = [ zig pkg-config ];
   }
