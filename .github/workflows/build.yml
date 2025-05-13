@@ -33,7 +33,6 @@ jobs:
         uses: cachix/install-nix-action@v27
       - name: Build and run examples
         run: nix build .
-        shell: bash
   build_macos_arm64:
     name: macOS ARM64
     runs-on: macos-14
