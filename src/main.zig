@@ -339,6 +339,14 @@ const State = struct {
             return false;
         }
 
+        fn clearRecentlyOpened(p: *Persistent) !void {
+            for (p.recently_opened.items) |entry| {
+                p.allocator.free(entry.path);
+            }
+            p.recently_opened.clearAndFree();
+            try p.save();
+        }
+
         /// Take the current state and write it out to the assocaited path
         pub fn save(p: *Persistent) !void {
             try p.file.seekTo(0);
@@ -971,7 +979,7 @@ pub fn main() !void {
 
     log.info("starting Device Tree Detective version {s} on {s}", .{ config.version, @tagName(builtin.os.tag) });
     log.info("compiled with Zig {s}", .{ builtin.zig_version_string });
-    log.info("GLFW version {s}", .{ c.glfwGetVersionString() });
+    log.info("GLFW version '{s}'", .{ c.glfwGetVersionString() });
 
     if (builtin.os.tag == .linux) {
         log.info("GTK version build={d}.{d}.{d} runtime={d}.{d}.{d}", .{
@@ -1214,8 +1222,18 @@ pub fn main() !void {
                 if (c.igMenuItem_Bool("Open", SUPER_KEY_STR ++ " + O", false, true)) {
                     open = true;
                 }
-                if (c.igMenuItem_Bool("Open Recent", "", false, true)) {
-                    c.igText("TODO");
+                if (c.igBeginMenu("Open Recent", true)) {
+                    for (state.persistent.recently_opened.items) |p| {
+                        if (c.igMenuItem_Bool(p.path, "", false, true)) {
+                            dtb_to_load = p.path;
+                        }
+                    }
+                    c.igSeparator();
+                    if (imgui.secondaryButton("Clear items")) {
+                        try state.persistent.clearRecentlyOpened();
+                    }
+
+                    c.igEndMenu();
                 }
                 if (c.igMenuItem_Bool("Close", SUPER_KEY_STR ++ " + W", false, true)) {
                     close = true;
@@ -1669,12 +1687,8 @@ pub fn main() !void {
             }
 
             c.igText("Recently opened");
-            if (c.igButton("Clear items", .{})) {
-                for (state.persistent.recently_opened.items) |entry| {
-                    state.persistent.allocator.free(entry.path);
-                }
-                state.persistent.recently_opened.clearAndFree();
-                try state.persistent.save();
+            if (imgui.secondaryButton("Clear items")) {
+                try state.persistent.clearRecentlyOpened();
             }
             var selected_item: ?usize = null;
             if (c.igBeginTable("##recent-dtbs", 1, 0, .{}, 0.0)) {
