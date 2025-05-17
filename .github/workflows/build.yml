@@ -25,6 +25,22 @@ jobs:
         run: zig build
       - name: Debian package
         run: zig build deb
+  build_linux_arm64:
+    name: Linux ARM64
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Install dependencies (via apt)
+        run: sudo apt update && sudo apt install -y libxkbcommon-dev xorg-dev libgtk-3-dev pkg-config
+      - name: Install Zig
+        uses: mlugg/setup-zig@v1.2.1
+        with:
+          version: ${{ env.ZIG_VERSION }}
+      - name: Build
+        run: zig build
+      - name: Debian package
+        run: zig build deb
   build_linux_x86_64_nix:
     name: Linux x86-64 (Nix)
     runs-on: ubuntu-24.04
