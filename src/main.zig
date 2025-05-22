@@ -15,7 +15,7 @@ const Colour = imgui.Colour;
 comptime {
     // Zig has many breaking changes between minor releases so it is important that
     // we check the user has the right version.
-    if (!(builtin.zig_version.major == 0 and builtin.zig_version.minor == 14 and builtin.zig_version.pre == null and builtin.zig_version.build == null)) {
+    if (!config.ignore_zig_version and !(builtin.zig_version.major == 0 and builtin.zig_version.minor == 14 and builtin.zig_version.pre == null and builtin.zig_version.build == null)) {
         @compileError("expected Zig version 0.14.x to be used, you have " ++ builtin.zig_version_string);
     }
 }
@@ -802,7 +802,7 @@ fn displaySelectedNode(allocator: Allocator) !void {
             if (c.igBeginTabItem("Source", null, c.ImGuiTabItemFlags_None)) {
                 const platform = state.getPlatform().?;
                 if (platform.dts) |dts| {
-                    c.igText(@ptrCast(dts.items));
+                    c.igTextUnformatted(@ptrCast(dts.items), null);
                 } else if (!state.dtc_available) {
                     // TODO: this is a big mess - there's too much state to keep track of and weird edge
                     // cases. It would be way easier if we just always had dtc available by shipping it ourselves!

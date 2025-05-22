@@ -150,6 +150,12 @@ dpkg: warning: while removing devicetreedetective, directory '/usr/local/bin' no
 Processing triggers for hicolor-icon-theme (0.17-2) ...
 ```
 
+On a macOS virtual machine:
+```
+NSGL: Failed to find a suitable pixel format
+GLFW decided not to create a window
+```
+
 ## Releasing
 
 1. Package macOS binary

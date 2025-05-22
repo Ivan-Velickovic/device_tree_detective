@@ -63,7 +63,7 @@ const DebPackage = struct {
     }
 };
 
-fn buildExe(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, dtb_dep: *std.Build.Dependency, cimgui_dep: *std.Build.Dependency) *std.Build.Step.Compile {
+fn buildExe(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, dtb_dep: *std.Build.Dependency, cimgui_dep: *std.Build.Dependency, ignore_zig_version: bool) *std.Build.Step.Compile {
     const dtb_mod = dtb_dep.module("dtb");
 
     const exe_mod = b.createModule(.{
@@ -95,22 +95,10 @@ fn buildExe(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.built
 
     switch (target.result.os.tag) {
         .macos => {
-            // exe.linkFramework("OpenGL");
             exe.linkFramework("Cocoa");
             exe.linkFramework("IOKit");
             exe.linkFramework("CoreFoundation");
             exe.linkFramework("CoreVideo");
-            // exe.linkSystemLibrary2("glfw3", .{
-            //     // Force static linking so we do not actually have to ship any 3rd
-            //     // party libraries for macOS, error if we can't find it rather than
-            //     // doing some implicit fallback. You'll notice that we turn pkg-config
-            //     // integration off, this is because I had fucking weird issues with it
-            //     // when linking the static library even though it worked for the dynamic
-            //     // library.
-            //     .preferred_link_mode = .static,
-            //     .search_strategy = .no_fallback,
-            //     .use_pkg_config = .no,
-            // });
             const maybe_objc_dep = b.lazyDependency("objc", .{
                 .target = target,
                 .optimize = optimize,
@@ -135,10 +123,6 @@ fn buildExe(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.built
             exe.linkSystemLibrary("Xrandr");
             exe.linkSystemLibrary("Xi");
             exe.linkSystemLibrary("dl");
-            // exe.linkSystemLibrary2("glfw3", .{
-            //     .preferred_link_mode = .static,
-            // });
-
             exe.linkSystemLibrary("gtk+-3.0");
         },
         else => @panic("unknown OS target"),
@@ -199,6 +183,7 @@ fn buildExe(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.built
     exe.addCSourceFile(.{ .file = cimgui_dep.path("cimgui.cpp"), .flags = cpp_flags });
 
     const options = b.addOptions();
+    options.addOption(bool, "ignore_zig_version", ignore_zig_version);
     options.addOption([]const u8, "version", zon.version);
     exe.root_module.addOptions("config", options);
 
@@ -208,6 +193,8 @@ fn buildExe(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.built
 pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
+
+    const ignore_zig_version = b.option(bool, "ignore-zig-version", "Do not emit compile error if the wrong version of Zig is used") orelse false;
 
     const dtb_dep = b.dependency("dtb", .{
         .target = target,
@@ -220,7 +207,7 @@ pub fn build(b: *std.Build) !void {
 
     const dtb_mod = dtb_dep.module("dtb");
 
-    const exe = buildExe(b, target, optimize, dtb_dep, cimgui_dep);
+    const exe = buildExe(b, target, optimize, dtb_dep, cimgui_dep, ignore_zig_version);
     b.installArtifact(exe);
 
     const run_cmd = b.addRunArtifact(exe);
@@ -259,7 +246,7 @@ pub fn build(b: *std.Build) !void {
     deb_create.dependOn(&wf.step);
     deb_create.dependOn(&b.addInstallDirectory(.{ .source_dir = wf.getDirectory(), .install_dir = deb_install_dir, .install_subdir = "" }).step);
 
-    const package_exe = buildExe(b, target, .ReleaseSafe, dtb_dep, cimgui_dep);
+    const package_exe = buildExe(b, target, .ReleaseSafe, dtb_dep, cimgui_dep, ignore_zig_version);
     const target_output = b.addInstallArtifact(package_exe, .{
         .dest_dir = .{
             .override = deb_install_dir,
