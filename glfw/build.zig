@@ -136,15 +136,11 @@ pub fn build(b: *std.Build) !void {
             sources.appendSlice(&linux_sources) catch unreachable;
 
             if (use_x11) {
-                lib.linkSystemLibrary2("X11", dynamic_link_opts);
-                lib.linkSystemLibrary2("xkbcommon", dynamic_link_opts);
                 sources.appendSlice(&linux_x11_sources) catch unreachable;
                 flags.append("-D_GLFW_X11") catch unreachable;
             }
 
             if (use_wl) {
-                lib.linkSystemLibrary2("wayland-client", dynamic_link_opts);
-
                 lib.root_module.addCMacro("WL_MARSHAL_FLAG_DESTROY", "1");
                 lib.addIncludePath(b.path("wayland-headers"));
 
@@ -163,14 +159,6 @@ pub fn build(b: *std.Build) !void {
 
     b.installArtifact(lib);
 }
-
-// For dynamic linking, we prefer dynamic linking and to search by
-// mode first. Mode first will search all paths for a dynamic library
-// before falling back to static.
-const dynamic_link_opts: std.Build.Module.LinkSystemLibraryOptions = .{
-    .preferred_link_mode = .dynamic,
-    .search_strategy = .mode_first,
-};
 
 const base_sources = [_][]const u8{
     "src/context.c",
