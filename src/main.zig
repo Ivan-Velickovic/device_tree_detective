@@ -4,21 +4,13 @@ const builtin = @import("builtin");
 const config = @import("config");
 const dtb = @import("dtb.zig");
 const dtc = @import("dtc.zig");
-const Allocator = std.mem.Allocator;
-const ArrayList = std.ArrayList;
 const log = std.log;
 const lib = @import("lib.zig");
 const fmt = lib.fmt;
 const imgui = @import("imgui.zig");
 const Colour = imgui.Colour;
-
-comptime {
-    // Zig has many breaking changes between minor releases so it is important that
-    // we check the user has the right version.
-    if (!config.ignore_zig_version and !(builtin.zig_version.major == 0 and builtin.zig_version.minor == 14 and builtin.zig_version.pre == null and builtin.zig_version.build == null)) {
-        @compileError("expected Zig version 0.14.x to be used, you have " ++ builtin.zig_version_string);
-    }
-}
+const Allocator = std.mem.Allocator;
+const Writer = std.Io.Writer;
 
 const c = @import("c.zig").c;
 const objc = if (builtin.os.tag == .macos) @import("objc") else null;
@@ -66,7 +58,7 @@ fn humanTimestampDiff(allocator: Allocator, t0: i64, t1: i64) [:0]const u8 {
 const State = struct {
     allocator: Allocator,
     /// Loaded platforms for inspection
-    platforms: std.ArrayList(Platform),
+    platforms: std.array_list.Managed(Platform),
     /// Current platform that we are inspecting
     platform: ?usize = null,
     /// Set during GLFW window runtime
@@ -88,7 +80,7 @@ const State = struct {
     pub fn init(allocator: Allocator) !State {
         return .{
             .allocator = allocator,
-            .platforms = std.ArrayList(Platform).init(allocator),
+            .platforms = std.array_list.Managed(Platform).init(allocator),
             .persistent = Persistent.create(allocator, "user.json") catch @panic("TODO"),
             // TODO: all these maps could actually be done at compile time
             .compatible_linux_drivers = try CompatibleMap.create(allocator, linux_driver_compatible_txt),
@@ -258,7 +250,7 @@ const State = struct {
         file: std.fs.File,
         parsed: ?std.json.Parsed(Json),
         // TODO: statically allocate and put limit of a 100 or something?
-        recently_opened: std.ArrayList(RecentlyOpened),
+        recently_opened: std.array_list.Managed(RecentlyOpened),
 
         const RecentlyOpened = struct {
             path: [:0]const u8,
@@ -279,7 +271,7 @@ const State = struct {
                 .path = path,
                 .file = file,
                 .parsed = null,
-                .recently_opened = std.ArrayList(RecentlyOpened).init(allocator),
+                .recently_opened = std.array_list.Managed(RecentlyOpened).init(allocator),
             };
             p.save() catch @panic("todo");
 
@@ -299,14 +291,14 @@ const State = struct {
                 }
             };
             const stat = file.stat() catch @panic("TODO");
-            const bytes = file.reader().readAllAlloc(allocator, stat.size) catch @panic("TODO");
+            const bytes = file.deprecatedReader().readAllAlloc(allocator, stat.size) catch @panic("TODO");
             defer allocator.free(bytes);
             const parsed = std.json.parseFromSlice(Json, allocator, bytes, .{}) catch |e| {
                 log.err("could not parse persistent state configuration '{s}' with error '{any}' removing and starting from scratch", .{ path, e });
                 return createEmpty(allocator, path, file);
             };
 
-            var recently_opened = try std.ArrayList(RecentlyOpened).initCapacity(allocator, parsed.value.recently_opened.len);
+            var recently_opened = try std.array_list.Managed(RecentlyOpened).initCapacity(allocator, parsed.value.recently_opened.len);
             for (parsed.value.recently_opened) |entry| {
                 std.fs.cwd().access(entry.path, .{}) catch |e| {
                     log.info("cannot access recently opened file '{s}' ({any}), dropping from list", .{ entry.path, e });
@@ -347,11 +339,15 @@ const State = struct {
             try p.save();
         }
 
-        /// Take the current state and write it out to the assocaited path
+        /// Take the current state and write it out to the associated path
         pub fn save(p: *Persistent) !void {
             try p.file.seekTo(0);
             try p.file.setEndPos(0);
-            try std.json.stringify(.{ .recently_opened = p.recently_opened.items }, .{ .whitespace = .indent_4 }, p.file.writer());
+            var buf: [1024]u8 = undefined;
+            var writer = p.file.writer(&buf);
+            var stringify: std.json.Stringify = .{ .writer = &writer.interface, .options = .{ .whitespace = .indent_4 } };
+            try stringify.write(.{ .recently_opened = p.recently_opened.items });
+            try writer.end();
         }
 
         pub fn deinit(p: *Persistent) void {
@@ -369,7 +365,7 @@ const State = struct {
 
 var state: State = undefined;
 
-fn dropCallback(_: ?*c.GLFWwindow, count: c_int, paths: [*c][*c]const u8) callconv(.C) void {
+fn dropCallback(_: ?*c.GLFWwindow, count: c_int, paths: [*c][*c]const u8) callconv(.c) void {
     for (0..@intCast(count)) |i| {
         log.debug("adding dropped '{s}'", .{ paths[i] });
         // TODO: check the file is actually an FDT
@@ -378,7 +374,7 @@ fn dropCallback(_: ?*c.GLFWwindow, count: c_int, paths: [*c][*c]const u8) callco
     state.setPlatform(std.mem.span(paths[@as(usize, @intCast(count)) - 1]));
 }
 
-fn glfwErrorCallback(errn: c_int, str: [*c]const u8) callconv(.C) void {
+fn glfwErrorCallback(errn: c_int, str: [*c]const u8) callconv(.c) void {
     // TODO:
     log.err("GLFW Error '{}'': {s}", .{ errn, str });
 }
@@ -404,16 +400,16 @@ const UBOOT_GITHUB = "https://github.com/u-boot/u-boot/tree/master";
 const Platform = struct {
     allocator: Allocator,
     dtb_bytes: []const u8,
-    dts: ?std.ArrayListUnmanaged(u8),
+    dts: ?std.ArrayList(u8),
     path: [:0]const u8,
     root: *dtb.Node,
     model: ?[]const u8,
-    regions: std.ArrayList(Platform.Region),
+    regions: std.array_list.Managed(Platform.Region),
     main_memory: ?MainMemory,
-    irqs: std.ArrayList(Irq),
-    irq_controllers: std.ArrayList(*dtb.Node),
+    irqs: std.array_list.Managed(Irq),
+    irq_controllers: std.array_list.Managed(*dtb.Node),
     model_str: [:0]const u8,
-    // cpus: ?ArrayList(Cpu),
+    // cpus: ?std.array_list.Managed(Cpu),
 
     // pub const Cpu = struct {
     //     pub const Type = union(enum) {
@@ -435,7 +431,7 @@ const Platform = struct {
     };
 
     pub const MainMemory = struct {
-        regions: ArrayList(MainMemory.Region),
+        regions: std.array_list.Managed(MainMemory.Region),
         size: u64,
         fmt: [:0]const u8,
 
@@ -451,7 +447,14 @@ const Platform = struct {
             @panic("todo");
         };
         const dtb_size = (try dtb_file.stat()).size;
-        const dtb_bytes = try dtb_file.reader().readAllAlloc(allocator, dtb_size);
+
+        var buf: [4096]u8 = undefined;
+        var dtb_reader = dtb_file.reader(&buf);
+
+        const dtb_bytes = try allocator.alloc(u8, dtb_size);
+        const bytes_read = try dtb_reader.read(dtb_bytes);
+        std.debug.assert(bytes_read == dtb_size);
+
         const root = try dtb.parse(allocator, dtb_bytes);
 
         var main_memory: ?MainMemory = null;
@@ -459,7 +462,7 @@ const Platform = struct {
         if (memory_node != null and memory_node.?.prop(.Reg) != null) {
             const regions = memory_node.?.prop(.Reg).?;
             var main_memory_size: u64 = 0;
-            var memory_regions = ArrayList(MainMemory.Region).initCapacity(allocator, regions.len) catch @panic("OOM");
+            var memory_regions = std.array_list.Managed(MainMemory.Region).initCapacity(allocator, regions.len) catch @panic("OOM");
             for (regions) |reg| {
                 const region: MainMemory.Region = .{
                     .addr = @intCast(reg[0]),
@@ -484,11 +487,11 @@ const Platform = struct {
             model_str = "N/A";
         }
 
-        var regions = std.ArrayList(Region).init(allocator);
+        var regions = std.array_list.Managed(Region).init(allocator);
         try regionsAdd(root, &regions);
         std.mem.sort(Region, regions.items, {}, Region.asc);
 
-        var irq_controllers = std.ArrayList(*dtb.Node).init(allocator);
+        var irq_controllers = std.array_list.Managed(*dtb.Node).init(allocator);
         try irqControllers(root, &irq_controllers);
 
         var maybe_dts = dtc.fromBlob(allocator, path) catch @panic("TODO");
@@ -532,7 +535,7 @@ const Platform = struct {
     }
 };
 
-fn regionsAdd(node: *dtb.Node, regions: *std.ArrayList(Platform.Region)) !void {
+fn regionsAdd(node: *dtb.Node, regions: *std.array_list.Managed(Platform.Region)) !void {
     for (node.children) |child| {
         try regionsAdd(child, regions);
     }
@@ -548,7 +551,7 @@ fn regionsAdd(node: *dtb.Node, regions: *std.ArrayList(Platform.Region)) !void {
     }
 }
 
-fn irqListAdd(nodes: []*dtb.Node, irqs: *std.ArrayList(Irq)) !void {
+fn irqListAdd(nodes: []*dtb.Node, irqs: *std.array_list.Managed(Irq)) !void {
     for (nodes) |node| {
         if (node.prop(.Interrupts)) |node_irqs| {
             for (node_irqs) |irq| {
@@ -579,8 +582,8 @@ const Irq = struct {
     }
 };
 
-fn irqList(allocator: Allocator, root: *dtb.Node) !std.ArrayList(Irq) {
-    var irqs = std.ArrayList(Irq).init(allocator);
+fn irqList(allocator: Allocator, root: *dtb.Node) !std.array_list.Managed(Irq) {
+    var irqs = std.array_list.Managed(Irq).init(allocator);
     try irqListAdd(root.children, &irqs);
 
     std.mem.sort(Irq, irqs.items, {}, Irq.asc);
@@ -588,7 +591,7 @@ fn irqList(allocator: Allocator, root: *dtb.Node) !std.ArrayList(Irq) {
     return irqs;
 }
 
-fn irqControllers(node: *dtb.Node, irq_controllers: *std.ArrayList(*dtb.Node)) !void {
+fn irqControllers(node: *dtb.Node, irq_controllers: *std.array_list.Managed(*dtb.Node)) !void {
     if (node.prop(.InterruptController)) |_| {
         try irq_controllers.append(node);
     }
@@ -752,9 +755,8 @@ fn displaySelectedNode(allocator: Allocator) !void {
     if (state.highlighted_node) |node| {
         if (c.igBeginTabBar("Views", c.ImGuiTabBarFlags_None)) {
             if (c.igBeginTabItem("Details", null, c.ImGuiTabItemFlags_None)) {
-                var name_bytes = std.ArrayList(u8).init(allocator);
-                defer name_bytes.deinit();
-                const node_name = try dtb.nodeNameFullPath(&name_bytes, node);
+                const node_name = try dtb.nodeNameFullPath(allocator, node);
+                defer allocator.free(node_name);
                 c.igText(node_name);
                 if (node.interruptParent()) |irq_parent| {
                     if (imgui.secondaryButton("Go to IRQ parent")) {
@@ -793,7 +795,7 @@ fn displaySelectedNode(allocator: Allocator) !void {
                     }
                 }
                 for (node.props) |prop| {
-                    const prop_fmt = fmt(allocator, "{any}", .{ prop });
+                    const prop_fmt = fmt(allocator, "{f}", .{ prop });
                     defer allocator.free(prop_fmt);
                     c.igText(prop_fmt);
                 }
@@ -872,8 +874,8 @@ fn handleFileDialogue(allocator: Allocator, s: *State) !void {
     }
 }
 
-fn openFilePicker(allocator: Allocator) !std.ArrayList([:0]const u8) {
-    var paths = std.ArrayList([:0]const u8).init(allocator);
+fn openFilePicker(allocator: Allocator) !std.array_list.Managed([:0]const u8) {
+    var paths = std.array_list.Managed([:0]const u8).init(allocator);
     // TODO: when creating classes/objects, may need to handle deallaction explicilty?
     if (builtin.os.tag == .macos) {
         const NSOpenPanel = objc.getClass("NSOpenPanel").?;
@@ -924,24 +926,22 @@ const usage_text =
 ;
 
 const Args = struct {
-    paths: std.ArrayList([:0]const u8),
+    paths: std.array_list.Managed([:0]const u8),
     // TODO: eventually remove and do automatic DPI scaling
     high_dpi: bool,
 
     pub fn parse(allocator: Allocator, args: []const [:0]const u8) !Args {
-        const stdout = std.io.getStdOut();
-
-        const usage_text_fmt = fmt(allocator, usage_text, .{});
-        defer allocator.free(usage_text_fmt);
-
-        var paths = std.ArrayList([:0]const u8).init(allocator);
+        var paths = std.array_list.Managed([:0]const u8).init(allocator);
         var high_dpi = false;
 
         var arg_i: usize = 1;
         while (arg_i < args.len) : (arg_i += 1) {
             const arg = args[arg_i];
             if (std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "--help")) {
-                try stdout.writeAll(usage_text_fmt);
+                var stdout_buffer: [1024]u8 = undefined;
+                var stdout = std.fs.File.stdout().writer(&stdout_buffer).interface;
+                try stdout.print(usage_text, .{});
+                try stdout.flush();
                 std.process.exit(0);
             } else if (std.mem.eql(u8, arg, "--high-dpi")) {
                 high_dpi = true;
@@ -961,7 +961,7 @@ const Args = struct {
     }
 };
 
-fn glfwWindowSizeCallback(_: ?*c.GLFWwindow, width: c_int, height: c_int) callconv(.C) void {
+fn glfwWindowSizeCallback(_: ?*c.GLFWwindow, width: c_int, height: c_int) callconv(.c) void {
     log.info("window size changed to {}px by {}px", .{ width, height });
 }
 
@@ -1006,32 +1006,32 @@ pub fn main() !void {
         state.setPlatform(args.paths.getLast());
     }
 
-    const sel4_example_dtbs: ?std.ArrayList([:0]const u8) = lib.exampleDtbs(allocator, lib.EXAMPLE_DTBS ++ "/sel4") catch |e| blk: {
+    var sel4_example_dtbs: ?std.ArrayList([:0]const u8) = lib.exampleDtbs(allocator, lib.EXAMPLE_DTBS ++ "/sel4") catch |e| blk: {
         switch (e) {
             error.FileNotFound => break :blk null,
             else => @panic("todo"),
         }
     };
     defer {
-        if (sel4_example_dtbs) |list| {
+        if (sel4_example_dtbs) |*list| {
             for (list.items) |d| {
                 allocator.free(d);
             }
-            list.deinit();
+            list.deinit(allocator);
         }
     }
-    const linux_example_dtbs: ?std.ArrayList([:0]const u8) = lib.exampleDtbs(allocator, lib.EXAMPLE_DTBS ++ "/linux") catch |e| blk: {
+    var linux_example_dtbs: ?std.ArrayList([:0]const u8) = lib.exampleDtbs(allocator, lib.EXAMPLE_DTBS ++ "/linux") catch |e| blk: {
         switch (e) {
             error.FileNotFound => break :blk null,
             else => @panic("todo"),
         }
     };
     defer {
-        if (linux_example_dtbs) |list| {
+        if (linux_example_dtbs) |*list| {
             for (list.items) |d| {
                 allocator.free(d);
             }
-            list.deinit();
+            list.deinit(allocator);
         }
     }
 
@@ -1470,9 +1470,8 @@ pub fn main() !void {
 
                             var hovered_any = false;
                             for (platform.irq_controllers.items, 0..) |irq_controller, i| {
-                                var name_bytes = std.ArrayList(u8).init(allocator);
-                                defer name_bytes.deinit();
-                                const name = try dtb.nodeNameFullPath(&name_bytes, irq_controller);
+                                const name = try dtb.nodeNameFullPath(allocator, irq_controller);
+                                defer allocator.free(name);
                                 var name_size: c.ImVec2 = undefined;
                                 c.igCalcTextSize(&name_size, name, null, false, 0.0);
 

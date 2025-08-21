@@ -59,10 +59,12 @@ pub fn build(b: *std.Build) !void {
         "Build with Metal; only supported on MacOS",
     ) orelse true;
 
-    const lib = b.addStaticLibrary(.{
+    const lib = b.addLibrary(.{
         .name = "glfw",
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .target = target,
+            .optimize = optimize,
+        }),
     });
     lib.linkLibC();
 
@@ -129,30 +131,30 @@ pub fn build(b: *std.Build) !void {
 
         // everything that isn't windows or mac is linux :P
         else => {
-            var sources = std.BoundedArray([]const u8, 64).init(0) catch unreachable;
-            var flags = std.BoundedArray([]const u8, 16).init(0) catch unreachable;
+            var sources = std.ArrayList([]const u8){};
+            var flags = std.ArrayList([]const u8){};
 
-            sources.appendSlice(&base_sources) catch unreachable;
-            sources.appendSlice(&linux_sources) catch unreachable;
+            sources.appendSlice(b.allocator, &base_sources) catch unreachable;
+            sources.appendSlice(b.allocator, &linux_sources) catch unreachable;
 
             if (use_x11) {
-                sources.appendSlice(&linux_x11_sources) catch unreachable;
-                flags.append("-D_GLFW_X11") catch unreachable;
+                sources.appendSlice(b.allocator, &linux_x11_sources) catch unreachable;
+                flags.append(b.allocator, "-D_GLFW_X11") catch unreachable;
             }
 
             if (use_wl) {
                 lib.root_module.addCMacro("WL_MARSHAL_FLAG_DESTROY", "1");
                 lib.addIncludePath(b.path("wayland-headers"));
 
-                sources.appendSlice(&linux_wl_sources) catch unreachable;
-                flags.append("-D_GLFW_WAYLAND") catch unreachable;
-                flags.append("-Wno-implicit-function-declaration") catch unreachable;
+                sources.appendSlice(b.allocator, &linux_wl_sources) catch unreachable;
+                flags.append(b.allocator, "-D_GLFW_WAYLAND") catch unreachable;
+                flags.append(b.allocator, "-Wno-implicit-function-declaration") catch unreachable;
             }
 
             lib.addCSourceFiles(.{
                 .root = upstream.path(""),
-                .files = sources.slice(),
-                .flags = flags.slice(),
+                .files = sources.items,
+                .flags = flags.items,
             });
         },
     }

@@ -1,23 +1,6 @@
 const std = @import("std");
 
-// In the current version of Zig (0.14.0), we cannot import build.zig.zon without a
-// explicit result type. https://github.com/ziglang/zig/pull/22907 fixes this, but
-// until 0.15.0 of Zig is released, we must do this.
-const zon: struct {
-    name: enum { device_tree_detective },
-    version: []const u8,
-    fingerprint: u64,
-    minimum_zig_version: []const u8,
-    dependencies: struct {
-        cimgui: struct { path: []const u8 },
-        glfw: struct { path: []const u8 },
-        dtb: Dependency,
-        objc: Dependency,
-    },
-    paths: []const []const u8,
-
-    const Dependency = struct { url: []const u8, hash: []const u8, lazy: bool = false };
-} = @import("build.zig.zon");
+const zon = @import("build.zig.zon");
 
 const DebPackage = struct {
     // TODO: handle libglfw3 being a dependency for system integration mode?

@@ -33,17 +33,19 @@ pub fn isCompatible(device_compatibles: []const []const u8, compatibles: []const
     return false;
 }
 
-pub fn nodeNameFullPath(bytes: *std.ArrayList(u8), node: *dtb.Node) ![:0]const u8 {
-    const writer = bytes.writer();
-    try nodeNamesFmt(node, writer);
-    try writer.writeAll("\x00");
+pub fn nodeNameFullPath(allocator: Allocator, node: *dtb.Node) ![:0]const u8 {
+    var allocating: std.Io.Writer.Allocating = .init(allocator);
+    const writer = &allocating.writer;
+    defer allocating.deinit();
 
-    return bytes.items[0..bytes.items.len - 1:0];
+    try nodeNamesFmt(writer, node);
+
+    return try allocating.toOwnedSliceSentinel(0);
 }
 
-fn nodeNamesFmt(node: *dtb.Node, writer: std.ArrayList(u8).Writer) !void {
+fn nodeNamesFmt(writer: *std.Io.Writer, node: *dtb.Node) !void {
     if (node.parent) |parent| {
-        try nodeNamesFmt(parent, writer);
+        try nodeNamesFmt(writer, parent);
         try writer.writeAll("/");
     }
 

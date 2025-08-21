@@ -9,7 +9,7 @@ fn stringLessThan(_: void, lhs: []const u8, rhs: []const u8) bool {
 }
 
 pub fn exampleDtbs(allocator: Allocator, dir_path: []const u8) !std.ArrayList([:0]const u8) {
-    var example_dtbs = std.ArrayList([:0]const u8).init(allocator);
+    var example_dtbs = std.ArrayList([:0]const u8){};
     var dir = try std.fs.cwd().openDir(dir_path, .{ .iterate = true });
     defer dir.close();
 
@@ -21,7 +21,7 @@ pub fn exampleDtbs(allocator: Allocator, dir_path: []const u8) !std.ArrayList([:
 
         // TODO: we can do this instead by reading the DTB magic
         if (std.mem.eql(u8, ".dtb", entry.name[entry.name.len - 4..entry.name.len])) {
-            try example_dtbs.append(fmt(allocator, "{s}/{s}", .{ dir_path, entry.name }));
+            try example_dtbs.append(allocator, fmt(allocator, "{s}/{s}", .{ dir_path, entry.name }));
         }
     }
 
@@ -31,6 +31,11 @@ pub fn exampleDtbs(allocator: Allocator, dir_path: []const u8) !std.ArrayList([:
 }
 
 pub fn fmt(allocator: Allocator, comptime s: []const u8, args: anytype) [:0]u8 {
-    return std.fmt.allocPrintZ(allocator, s, args) catch @panic("OOM");
-}
+    var writer: std.Io.Writer.Allocating = .init(allocator);
+    defer writer.deinit();
+    writer.writer.print(s, args) catch @panic("OOM");
 
+    const slice = writer.toOwnedSliceSentinel(0) catch @panic("OOM");
+
+    return slice;
+}
