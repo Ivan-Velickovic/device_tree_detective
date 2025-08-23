@@ -3,6 +3,7 @@
 /// it's convenient to have abstract it in Zig (e.g custom buttons that appear
 /// multiple times or style changes).
 const std = @import("std");
+const builtin = @import("builtin");
 const c = @import("c.zig").c;
 
 pub const GLOBAL_COLOURS = .{
@@ -140,4 +141,22 @@ pub fn centerText(text: [:0]const u8, start: c.ImVec2, size: c.ImVec2) c.ImVec2 
         .x = start.x + (size.x / 2.0) - (text_size.x / 2.0),
         .y = start.y + (size.y / 2.0) - (text_size.y / 2.0),
     };
+}
+
+pub fn loadFont(imio: [*c]c.ImGuiIO, bytes: [:0]const u8, size: f32) [*c]c.ImFont {
+    const font_cfg = c.ImFontConfig_ImFontConfig();
+    if (builtin.os.tag == .macos) {
+        // TODO: this does largely fix the blurriness seen on macOS.
+        // Not sure if it's the full solution. There's also https://github.com/ocornut/imgui/blob/master/docs/FONTS.md#using-freetype-rasterizer-imgui_freetype
+        // and some comments on the RasterizerDensity field definition in imgui.
+        // NOTE: looks like this does mess up low-resolution screens on macOS, e.g my
+        // 1080p monitor used as an external display.
+        // Therefore, another consideration if we continue to use RasterizerDensity is that we need to
+        // update this value based on the current monitor, which could change over the program's execution.
+        font_cfg.*.RasterizerDensity = 2.0;
+    }
+    // Stop ImGui from freeing our font memory.
+    font_cfg.*.FontDataOwnedByAtlas = false;
+
+    return c.ImFontAtlas_AddFontFromMemoryTTF(imio.*.Fonts, @constCast(@ptrCast(bytes.ptr)), @intCast(bytes.len), size, font_cfg, null);
 }

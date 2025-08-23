@@ -70,6 +70,7 @@ fn buildExe(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.built
         "assets/maps/dt_bindings_list.txt",
         "assets/maps/uboot_compatible_list.txt",
         "assets/fonts/inter/Inter-Medium.ttf",
+        "assets/fonts/roboto_mono/static/RobotoMono-Regular.ttf",
         "assets/icons/macos.png",
     };
     inline for (assets) |asset| {

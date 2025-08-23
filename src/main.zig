@@ -23,8 +23,14 @@ const riscv_isa_extensions_csv = @embedFile("assets/maps/riscv_isa_extensions.cs
 const linux_driver_compatible_txt = @embedFile("assets/maps/linux_compatible_list.txt");
 const linux_dt_binding_compatible_txt = @embedFile("assets/maps/dt_bindings_list.txt");
 const uboot_driver_compatible_txt = @embedFile("assets/maps/uboot_compatible_list.txt");
-const font: [:0]const u8 = @embedFile("assets/fonts/inter/Inter-Medium.ttf");
+const fonts_bytes = [_][:0]const u8{
+    // The first font is the default font
+    @embedFile("assets/fonts/inter/Inter-Medium.ttf"),
+    @embedFile("assets/fonts/roboto_mono/static/RobotoMono-Regular.ttf"),
+};
 const logo: [:0]const u8 = @embedFile("assets/icons/macos.png");
+
+var fonts: std.ArrayList([*c]c.ImFont) = undefined;
 
 fn humanTimestampDiff(allocator: Allocator, t0: i64, t1: i64) [:0]const u8 {
     const diff_s = t1 - t0;
@@ -804,7 +810,9 @@ fn displaySelectedNode(allocator: Allocator) !void {
             if (c.igBeginTabItem("Source", null, c.ImGuiTabItemFlags_None)) {
                 const platform = state.getPlatform().?;
                 if (platform.dts) |dts| {
+                    c.igPushFont(fonts.items[1]);
                     c.igTextUnformatted(@ptrCast(dts.items), null);
+                    c.igPopFont();
                 } else if (!state.dtc_available) {
                     // TODO: this is a big mess - there's too much state to keep track of and weird edge
                     // cases. It would be way easier if we just always had dtc available by shipping it ourselves!
@@ -1151,20 +1159,11 @@ pub fn main() !void {
     imio.*.ConfigFlags = c.ImGuiConfigFlags_NavEnableKeyboard;
 
     const font_size: f32 = if (args.high_dpi) 20 else 14;
-    const font_cfg = c.ImFontConfig_ImFontConfig();
-    if (builtin.os.tag == .macos) {
-        // TODO: this does largely fix the blurriness seen on macOS.
-        // Not sure if it's the full solution. There's also https://github.com/ocornut/imgui/blob/master/docs/FONTS.md#using-freetype-rasterizer-imgui_freetype
-        // and some comments on the RasterizerDensity field definition in imgui.
-        // NOTE: looks like this does mess up low-resolution screens on macOS, e.g my
-        // 1080p monitor used as an external display.
-        // Therefore, another consideration if we continue to use RasterizerDensity is that we need to
-        // update this value based on the current monitor, which could change over the program's execution.
-        font_cfg.*.RasterizerDensity = 2.0;
+    fonts = std.ArrayList([*c]c.ImFont){};
+    defer fonts.deinit(allocator);
+    for (fonts_bytes) |font| {
+        try fonts.append(allocator, imgui.loadFont(imio, font, font_size));
     }
-    // Stop ImGui from freeing our font memory.
-    font_cfg.*.FontDataOwnedByAtlas = false;
-    _ = c.ImFontAtlas_AddFontFromMemoryTTF(imio.*.Fonts, @constCast(@ptrCast(font.ptr)), @intCast(font.len), font_size, font_cfg, null);
 
     c.igStyleColorsLight(null);
 
