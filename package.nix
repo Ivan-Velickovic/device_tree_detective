@@ -17,17 +17,17 @@
 
   let deps = linkFarm "zig-packages" [
     {
-      name = "dtb-0.0.0-gULdmRIcAgAuGyjPnpHqY6Gu8RDkKeJe2qoNFZG0MwcO";
+      name = "dtb-0.0.0-gULdmf4ZAgA6G3AGbbbs2GQNA3JneiyO36jMDmq8XSwz";
       path = fetchzip {
         url = "https://github.com/Ivan-Velickovic/dtb.zig/archive/4101efa09f2863a27367aae449f9186c700cb132.tar.gz";
-        hash = "sha256-LhczeWePRQ4KsCrk4no+PayzZ1ICLditoES8eS/yh4Q=";
+        hash = "sha256-LMlGzPHoVpDQgf33V3s19gmnTP4YPIqcw3GEogDkvxQ=";
       };
     }
     {
-      name = "zig_objc-0.0.0-Ir_Sp3TyAADEVRTxXlScq3t_uKAM91MYNerZkHfbD0yt";
+      name = "zig_objc-0.0.0-Ir_Sp8YTAQBjTWe2mkgNDNSj73vaoT8FHNVeSqKZ7cBo";
       path = fetchzip {
         url = "https://github.com/mitchellh/zig-objc/archive/3ab0d37c7d6b933d6ded1b3a35b6b60f05590a98.tar.gz";
-        hash = "sha256-3QP5Platj77D0zZdYbMkAIG/WJhBnLZMwrzM65pGJ9Q=";
+        hash = "sha256-JUKDny6iMEd0niJInciWJKf8Ez1+k2a7n6sO4X1mXMQ=";
       };
     }
     {

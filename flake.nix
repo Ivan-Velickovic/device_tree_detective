@@ -2,11 +2,13 @@
   description = "A flake for building DTB viewer";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    zig-overlay.url = "github:mitchellh/zig-overlay";
+    zig-overlay.inputs.nixpkgs.follows = "nixpkgs";
     utils.url = "github:numtide/flake-utils";
   };
 
-  outputs = { self, nixpkgs, ... }@inputs: inputs.utils.lib.eachSystem [
+  outputs = { self, nixpkgs, zig-overlay, ... }@inputs: inputs.utils.lib.eachSystem [
     "x86_64-linux"
     "aarch64-linux"
   ]
@@ -15,6 +17,7 @@
         pkgs = import nixpkgs {
           inherit system;
         };
+        zig = zig-overlay.packages.${system}."0.15.1";
       in
       {
         devShells.default = pkgs.mkShell rec {
