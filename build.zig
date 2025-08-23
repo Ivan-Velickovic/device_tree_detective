@@ -46,7 +46,7 @@ const DebPackage = struct {
     }
 };
 
-fn buildExe(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, dtb_dep: *std.Build.Dependency, cimgui_dep: *std.Build.Dependency, ignore_zig_version: bool) *std.Build.Step.Compile {
+fn buildExe(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, dtb_dep: *std.Build.Dependency, cimgui_dep: *std.Build.Dependency) *std.Build.Step.Compile {
     const dtb_mod = dtb_dep.module("dtb");
 
     const exe_mod = b.createModule(.{
@@ -166,7 +166,6 @@ fn buildExe(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.built
     exe.addCSourceFile(.{ .file = cimgui_dep.path("cimgui.cpp"), .flags = cpp_flags });
 
     const options = b.addOptions();
-    options.addOption(bool, "ignore_zig_version", ignore_zig_version);
     options.addOption([]const u8, "version", zon.version);
     exe.root_module.addOptions("config", options);
 
@@ -176,8 +175,6 @@ fn buildExe(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.built
 pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
-
-    const ignore_zig_version = b.option(bool, "ignore-zig-version", "Do not emit compile error if the wrong version of Zig is used") orelse false;
 
     const dtb_dep = b.dependency("dtb", .{
         .target = target,
@@ -190,7 +187,7 @@ pub fn build(b: *std.Build) !void {
 
     const dtb_mod = dtb_dep.module("dtb");
 
-    const exe = buildExe(b, target, optimize, dtb_dep, cimgui_dep, ignore_zig_version);
+    const exe = buildExe(b, target, optimize, dtb_dep, cimgui_dep);
     b.installArtifact(exe);
 
     const run_cmd = b.addRunArtifact(exe);
@@ -229,7 +226,7 @@ pub fn build(b: *std.Build) !void {
     deb_create.dependOn(&wf.step);
     deb_create.dependOn(&b.addInstallDirectory(.{ .source_dir = wf.getDirectory(), .install_dir = deb_install_dir, .install_subdir = "" }).step);
 
-    const package_exe = buildExe(b, target, .ReleaseSafe, dtb_dep, cimgui_dep, ignore_zig_version);
+    const package_exe = buildExe(b, target, .ReleaseSafe, dtb_dep, cimgui_dep);
     const target_output = b.addInstallArtifact(package_exe, .{
         .dest_dir = .{
             .override = deb_install_dir,
