@@ -4,7 +4,7 @@ Building from source is supported macOS and Linux.
 
 There are two system dependencies to build Device Tree Detective:
 
-* Zig (0.14.0)
+* Zig (0.15.x)
 * pkg-config
 
 Below are environment specific instructions.
