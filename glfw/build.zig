@@ -140,6 +140,7 @@ pub fn build(b: *std.Build) !void {
             if (use_x11) {
                 sources.appendSlice(b.allocator, &linux_x11_sources) catch unreachable;
                 flags.append(b.allocator, "-D_GLFW_X11") catch unreachable;
+                lib.linkSystemLibrary("X11");
             }
 
             if (use_wl) {
