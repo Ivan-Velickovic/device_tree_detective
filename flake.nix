@@ -2,7 +2,7 @@
   description = "A flake for building DTB viewer";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
     zig-overlay.url = "github:mitchellh/zig-overlay";
     zig-overlay.inputs.nixpkgs.follows = "nixpkgs";
     utils.url = "github:numtide/flake-utils";
@@ -28,10 +28,11 @@
             libxkbcommon
             gtk3
             glibc
+            xorg.libX11.dev
           ];
 
-          nativeBuildInputs = with pkgs; [ zig pkg-config ];
+          nativeBuildInputs = [ zig pkgs.pkg-config ];
         };
-        packages.default = pkgs.callPackage ./package.nix {};
+        packages.default = pkgs.callPackage ./package.nix { zig = zig; };
       });
 }

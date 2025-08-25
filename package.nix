@@ -19,14 +19,14 @@
     {
       name = "dtb-0.0.0-gULdmf4ZAgA6G3AGbbbs2GQNA3JneiyO36jMDmq8XSwz";
       path = fetchzip {
-        url = "https://github.com/Ivan-Velickovic/dtb.zig/archive/4101efa09f2863a27367aae449f9186c700cb132.tar.gz";
+        url = "https://github.com/Ivan-Velickovic/dtb.zig/archive/803a797cfa26c5a8f1a02fa8eb3ef5a5c3d1a7ce.tar.gz";
         hash = "sha256-LMlGzPHoVpDQgf33V3s19gmnTP4YPIqcw3GEogDkvxQ=";
       };
     }
     {
       name = "zig_objc-0.0.0-Ir_Sp8YTAQBjTWe2mkgNDNSj73vaoT8FHNVeSqKZ7cBo";
       path = fetchzip {
-        url = "https://github.com/mitchellh/zig-objc/archive/3ab0d37c7d6b933d6ded1b3a35b6b60f05590a98.tar.gz";
+        url = "https://github.com/Ivan-Velickovic/zig-objc/archive/8f4d00dd632e81a126bf54e46d4bc28e51d94ac3.tar.gz";
         hash = "sha256-JUKDny6iMEd0niJInciWJKf8Ez1+k2a7n6sO4X1mXMQ=";
       };
     }
