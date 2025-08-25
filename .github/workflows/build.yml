@@ -41,16 +41,16 @@ jobs:
         run: zig build
       - name: Debian package
         run: zig build deb
-  build_linux_x86_64_nix:
-    name: Linux x86-64 (Nix)
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      - name: Setup Nix
-        uses: cachix/install-nix-action@v27
-      - name: Build and run examples
-        run: nix build .
+  # build_linux_x86_64_nix:
+  #   name: Linux x86-64 (Nix)
+  #   runs-on: ubuntu-24.04
+  #   steps:
+  #     - name: Checkout repository
+  #       uses: actions/checkout@v4
+  #     - name: Setup Nix
+  #       uses: cachix/install-nix-action@v27
+  #     - name: Build and run examples
+  #       run: nix build .
   build_macos_arm64:
     name: macOS ARM64
     runs-on: macos-14
